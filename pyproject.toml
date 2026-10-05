@@ -66,6 +66,7 @@ reportCallIssue = "none"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."] # experiments.* importable from tests
 markers = [
     "model: loads a real (small) model; slower, needs HF download",
     "api: calls OpenRouter; needs OPENROUTER_API_KEY",

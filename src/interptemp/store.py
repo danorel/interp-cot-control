@@ -10,10 +10,10 @@ import torch
 from interptemp.sites import Site
 
 
-def write_jsonl(path: str | Path, rows: Iterable[dict[str, Any]]) -> Path:
+def write_jsonl(path: str | Path, rows: Iterable[dict[str, Any]], append: bool = False) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w") as f:
+    with path.open("a" if append else "w") as f:
         for r in rows:
             f.write(json.dumps(r, ensure_ascii=False, default=str) + "\n")
     return path

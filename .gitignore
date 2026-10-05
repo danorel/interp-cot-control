@@ -11,3 +11,4 @@ outputs/
 .ruff_cache/
 envs/vllm/.venv/
 envs/vllm/uv.lock
+logs/
