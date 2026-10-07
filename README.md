@@ -11,8 +11,8 @@ writes?
 CoT with and without the ban, the logit lens sees no change in the model's prediction of the
 word until late in the network, then a word-specific suppression: from layer ~24 for "total"
 (~2×), from layer ~29 for "factor" (~1.4×). It does not fade over thousands of tokens of
-reasoning. A monitoring threat changes neither the word rate nor this suppression, but makes
-the CoT more open about the rule (+13 percentage points of CoTs stating it, for both words).
+reasoning. A monitoring threat changes neither the word rate nor this suppression, but the
+model states the rule more often (+13 percentage points of CoTs, for each word separately).
 What the lens cannot tell is whether the instruction is already represented earlier in other
 directions, or whether the late layers cause the suppression.
 
@@ -132,9 +132,12 @@ by about half; banning `sum` leaves it unchanged; the monitoring threat adds not
 - **Aware but non-compliant.** 39–53% of banned CoTs state the rule and often keep using the word.
 - **Substitution.** `sum` becomes 2–3× more frequent under the ban.
 - **No accuracy cost**, and the grader is almost never mentioned.
-- **The monitoring threat makes the CoT more open about the rule, not more hidden.** It does
-  not change the word rate (`grader − forbid` −0.12 per 1k chars, CI includes 0) but raises the
-  share of CoTs that state the rule by 13 percentage points (paired, 95% CI +6 to +22).
+- **With the monitoring threat the model states the rule more often.** The threat does not
+  change the word rate (`grader − forbid` −0.12 per 1k chars, CI includes 0), but 63 vs 47 of
+  120 CoTs state the rule (paired: 21 problems only under the threat, 5 only under the plain
+  ban; +13 percentage points, 95% CI +6 to +22). The threat makes the prompt longer and the
+  rule more salient, which may explain this without any role of monitoring; a condition with
+  the same emphasis but no monitor ("this rule is very important") would tell them apart.
 
 ### Inside the model: a late, word-specific filter
 
@@ -267,8 +270,10 @@ Paired per-problem differences in `factor` per 1k chars: `forbid − control` �
   on the similar word does not, the grader adds nothing, accuracy is unaffected.
 - **Not harder to comply with, contrary to our expectation.** Fully clean CoTs are more common
   (24% vs 7%), partly because 15% of `baseline` CoTs never use `factor`.
-- **Fewer meta sentences** (19–33% vs 39–53%); as for `total`, the grader adds 13 percentage
-  points of CoTs stating the rule (95% CI +6 to +22) without changing the word rate; and **the similar word is used as a substitute**
+- **Fewer meta sentences** (19–33% vs 39–53%); as for `total`, with the grader more CoTs state the
+  rule (39 vs 23 of 120) without a change in the word rate. The discordant counts (21 problems
+  only under the grader, 5 only under the ban) happen to equal those for `total`, so the
+  paired CI is identical (+13 pp, +6 to +22); the two runs are independent. And **the similar word is used as a substitute**
   (`divisor` ~4× more frequent under the ban), like `sum` for `total`.
 - Banned CoTs are only ~13% shorter (~30% for `total`).
 
@@ -323,9 +328,9 @@ is even up to ~1.7× less likely around layer 20); the strong late suppression i
 | hidden candidate before substitutes | 14–90× above natural use, P ≈ 1–2% | 5–17× above natural use, P ≈ 0.003% |
 | meta sentences: mid-layer boost | up to 2.2× | none |
 | banning the similar word raises the target late | yes, 1.1–1.35× | no |
-| output (layer 35) where the word comes naturally: ban vs control | 82% → 20% (×0.24) | 84% → 51% (×0.61) |
+| output (layer 35) where the word comes naturally: ban vs control (geometric mean) | 82% → 20% (×0.24) | 84% → 51% (×0.61) |
 | monitoring threat: word rate and internals | ≈ nothing | ≈ nothing |
-| monitoring threat: CoTs stating the rule | +13 pp | +13 pp |
+| monitoring threat: CoTs stating the rule | 63 vs 47 of 120 (+13 pp) | 39 vs 23 of 120 (+13 pp) |
 
 ## Validation of the meta-sentence detector
 
@@ -364,20 +369,21 @@ Holds for both words:
    word's direction, so this does not show that earlier layers ignore the instruction.
 3. **The suppression is steady across the reasoning**, from the first to the last fifth.
 4. **At the output, where the model would naturally write the word**, the ban lowers its
-   probability on the same text: 82% → 20% (`total`), 84% → 51% (`factor`).
+   probability on the same text: 82% → 20% (`total`), 84% → 51% (`factor`), as geometric
+   means over positions.
 5. **Violations co-occur** with a somewhat stronger mid-layer pull toward the word and a late
    suppression that does not intensify; violations are selected by outcome, so this is not a
    causal account.
-6. **A monitoring threat changes neither the word rate nor the internals, but makes the CoT
-   more open about the rule**: +13 percentage points of CoTs stating it (95% CI +6 to +22) for
-   both words.
+6. **A monitoring threat changes neither the word rate nor the internals, but the model states
+   the rule more often**: +13 percentage points of CoTs, for each word separately (95% CI +6 to
+   +22). A more salient prompt may explain this as well as the monitor; not tested.
 
 Depends on the word:
 
 7. **Strength and depth of the suppression**: ~2× from layer ~24 for `total`, ~1.4× from layer
-   ~29 for `factor`. The per-position output effect also differs (×0.24 vs ×0.61), yet the
-   text-level reduction is similar (−46% vs −40%): the model writes different text under the
-   ban, so the per-position strength does not translate directly into the overall rate.
+   ~29 for `factor`. The per-position output effect also differs (×0.24 vs ×0.61). For `factor`
+   ×0.61 predicts the observed −40% in the text; for `total`, ×0.24 would predict about −76%
+   (~450 violations), but the model wrote 822. This mismatch is unresolved (see open questions).
 8. **Hidden candidate behind substitutes**: strong when a true synonym exists (`total` →
    `sum`), negligible when the alternatives are not synonyms (`factor` → `product`).
 9. **Boost while talking about the rule**: seen for `total` only.
@@ -400,8 +406,18 @@ The project answers its question for Qwen3-8B and two words; these would strengt
    where the ban would still leave the word likely at the output.
 4. **A concept-level metric**: a linear probe for "the word comes next" at substitute positions,
    or a tuned lens, instead of the logit lens's next-token view.
-5. **A newer dense model** (e.g. Qwen3.6/3.8-27B, if nnterp supports it) or a different family.
-6. **Hiding information rather than a word**: ask the model to keep a key intermediate result
+5. **Why does free generation of `total` violate about twice as often as teacher forcing
+   predicts?** Candidates: ×0.24 is a ratio of geometric means, while the expected count
+   depends on the arithmetic mean of P (a bimodal P under the ban would close the gap); the
+   model's own banned CoTs may reach more formulaic spots where suppression is weak; CoTs
+   shorten more for `total` (~30%) than for `factor` (~13%), which inflates the per-1k rate;
+   lens probabilities are at T=1, sampling was at T=0.6. All need P(word) at the output layer
+   at every CoT position under both prompts (a short new run); the stored swap results keep
+   only per-class means of log P over subsampled positions. A calibration check comes free:
+   summed P under the ban over the model's own banned CoTs should match the observed count.
+6. **Monitoring vs salience**: a condition that stresses the rule without a monitor.
+7. **A newer dense model** (e.g. Qwen3.6/3.8-27B, if nnterp supports it) or a different family.
+8. **Hiding information rather than a word**: ask the model to keep a key intermediate result
    out of its CoT, or to replace it with a wrong one, and test whether the true value remains
    readable in the activations — a closer proxy for the CoT-monitoring threat model, reusing the
    prompt-swap and lens tooling here.
