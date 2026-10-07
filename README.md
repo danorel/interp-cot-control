@@ -81,10 +81,11 @@ Paired per-problem differences in `total` per 1k chars (95% bootstrap CI):
 - **Every prohibition shortens the CoT by ~30%** (including `random`), so raw counts overstate
   compliance (−8.7 uses per CoT); report the length-normalised rate.
 
-### Residual stream (logit lens): late, specific suppression; mid layers unresolved
+### Residual stream, different texts (first pass, superseded below)
 
 Paired difference in mean log P(`total`) vs `control` at CoT positions where the next token is
-not the word (≈ e^x times as likely; `*`-level CIs exclude 0 for most layers in each band):
+not the word (≈ e^x times as likely; `*`-level CIs exclude 0 for most layers in each band).
+Each condition is measured on the CoT it wrote, so text differences are mixed in:
 
 | layers | forbid | grader | random |
 |---|---|---|---|
@@ -100,15 +101,48 @@ not the word (≈ e^x times as likely; `*`-level CIs exclude 0 for most layers i
   shift the sampled positions), not a response to the rule.
 - `grader` and `forbid` are indistinguishable at every layer.
 
-**Tentative reading:** the model removes about half of the word's uses from the text, and the
-word-specific internal suppression shows up only close to the output. Whether the concept is
-still carried in the middle of the network is open.
+### Residual stream, same text (prompt swap): the word survives the first two thirds of the network
+
+`experiments/forbidden_word/swap.py`: each CoT (480 = 120 problems × control/forbid/random/grader)
+is re-read teacher-forced under every condition's prompt, at the same CoT tokens, so a
+difference between prompts is the instruction's effect alone. Run
+`outputs/forbidden_word_swap/20261007-130027`, 0 CoTs skipped. Values below: CoTs written
+under `forbid`; CoTs from the other conditions give the same picture at layers 0–34.
+Same-text pairing removes almost all noise, so nearly every cell has a CI excluding 0 —
+read magnitudes (±0.05 ≈ ±5% is practically zero).
+
+| layers | forbid − control | **forbid − random** | random − control | grader − forbid |
+|---|---|---|---|---|
+| 0–23 | −0.02 … −0.07 | ≈0 | ≈0 | ≈0 |
+| 24–27 | ≈0 | −0.13 … −0.15 | +0.07 … +0.15 | ≈0 |
+| 28–34 | **−0.3 … −0.7** | **−0.4 … −0.9** | +0.1 … +0.3 | −0.03 … −0.05 |
+
+- **Mid layers: no effect.** With the text held fixed, the earlier mid-layer rise disappears:
+  it was a text/position artifact (hypothesis H1a). Up to layer ~23 the model builds up the
+  `total` prediction as if there were no prohibition.
+- **Late, word-specific suppression.** The effect starts around layer 24 and peaks at 29–32:
+  2–2.5× lower vs `random` (a prohibition of a different word), i.e. a response to *this*
+  word, not to prohibitions in general.
+- **A property of the instruction, not of the text.** `forbid − control` at layers 29–33 is
+  about −0.5 … −0.7 on CoTs written under every condition, including `control` CoTs that use
+  the word freely.
+- **Stable through the CoT.** Split by relative position (5 bins) the late suppression is
+  present from the first to the last fifth of the reasoning, slightly strongest mid-CoT.
+- **Mirror substitution inside.** Forbidding `sum` *raises* P(`total`) at late layers
+  (+0.1 … +0.4), the internal counterpart of `sum` rising in text when `total` is forbidden.
+- **Monitoring adds ≤7%** (`grader − forbid`).
+- **Layer 35 (output) is unstable** across CoT sources (−2.6 on `forbid` CoTs, +0.8 on `control`
+  CoTs) — log P of a rare token at the final layer is dominated by the distribution's tail; not
+  interpreted.
+
+**Current reading:** the word does not disappear from the computation. Through the first ~2/3 of
+the network the model prepares `total` exactly as without the prohibition; the instruction acts
+as a late, word-specific filter (layers ~24–34), which removes about half of the word's uses
+in the text. Still correlational, and the lens tracks "next token is `total`", not the concept.
 
 ### Next steps
 
-1. **Remove the position/text confound** — re-run each CoT teacher-forced under the *other*
-   condition's prompt (same text, only the instruction differs), and/or compare by relative
-   position in the CoT. Decides the mid-layer question.
+1. ~~Remove the position/text confound~~ — done (prompt swap above).
 2. **Causal test** — patch layers 29–34 from the control-prompt run into the forbid-prompt run
    on the same CoT text; if P(`total`) recovers, the suppression is mediated there.
 3. **Second metric** — linear probe for "`total` comes next" applied where the model wrote a
@@ -183,6 +217,7 @@ experiments/forbidden_word/
   stats.py        bootstrap CIs, paired contrasts, metric table
   show.py         inspect one problem across all conditions
   summarize.py    recompute summary.json from rows.jsonl (no model)
+  swap.py, swap.yaml  prompt swap: same CoT under every condition's prompt (same-text lens)
 experiments/sanity/  checks to run on every new model/pod before experiments (`make sanity`)
 src/interptemp/   generic infrastructure: model backends (nnterp, vLLM), Site, run dirs,
                   typed configs with CLI overrides, JSONL/activation storage
