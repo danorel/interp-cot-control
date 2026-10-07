@@ -24,6 +24,7 @@ dev = [
     "pyright>=1.1.390",
     "pre-commit>=4.0",
     "ipykernel>=6.29",
+    "matplotlib>=3.11.2",
 ]
 
 [project.scripts]
