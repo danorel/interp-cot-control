@@ -23,12 +23,19 @@ from interptemp.sites import resid_post
 Unembed = Callable[[torch.Tensor], torch.Tensor]
 
 
-def variant_token_ids(tokenizer: Any, forms: Sequence[str]) -> list[int]:
-    """First token of each surface variant (±leading space, ±capitalised) of each form."""
+def variant_token_ids(
+    tokenizer: Any, forms: Sequence[str], single_token_only: bool = False
+) -> list[int]:
+    """First token of each surface variant (±leading space, ±capitalised) of each form.
+
+    With `single_token_only`, variants that split into several tokens are dropped: their
+    first token is a generic prefix ("Altogether" -> "Al") that would match unrelated words.
+    """
     variants = {
         prefix + case for f in forms for case in (f, f.capitalize()) for prefix in ("", " ")
     }
-    return sorted({tokenizer(v, add_special_tokens=False).input_ids[0] for v in variants})
+    encoded = [tokenizer(v, add_special_tokens=False).input_ids for v in variants]
+    return sorted({ids[0] for ids in encoded if not single_token_only or len(ids) == 1})
 
 
 def lens_positions(
@@ -101,7 +108,10 @@ class CoTLens:
         layers: Sequence[int] | None,
         max_positions: int | None,
         topk: int,
+        extra_forms: Mapping[str, Sequence[str]] | None = None,
     ):
+        """`extra_forms`: further named word sets to read off the lens (single-token variants
+        only); they don't change which positions the main experiment excludes."""
         self.model = model
         tok = model.tokenizer
         self.token_sets = {
@@ -109,6 +119,8 @@ class CoTLens:
             "other": variant_token_ids(tok, other_forms),
         }
         self.exclude_next = {i for ids in self.token_sets.values() for i in ids}
+        for name, forms in (extra_forms or {}).items():
+            self.token_sets[name] = variant_token_ids(tok, forms, single_token_only=True)
         self.layers = list(layers) if layers is not None else list(range(model.num_layers))
         self.sites = resid_post(self.layers)
         self.max_positions, self.topk = max_positions, topk

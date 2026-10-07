@@ -17,6 +17,10 @@ params:
     forms: [sum, sums, summed, summing]
   cot_conditions: [control, forbid, random, grader]
   prompt_conditions: [control, forbid, random, grader]
+  # Words written instead of "total" (single-token variants only; generic words like
+  # "all"/"whole" left out). Positions before them form the "substitute" class.
+  substitutes: [sum, overall, combined, altogether, aggregate]
+  max_class_positions: 64
   n_bins: 5
   lens:
     layers: null

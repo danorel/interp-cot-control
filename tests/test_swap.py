@@ -9,22 +9,26 @@ from experiments.forbidden_word.data import Problem, Sample
 from experiments.forbidden_word.lens import CoTLens
 from experiments.forbidden_word.params import SwapParams
 from experiments.forbidden_word.swap import (
+    ClassCurves,
     SwapScore,
     bin_means,
+    classify_positions,
     position_bins,
     score_cot,
     summarize_swap,
 )
 
 CONFIG = Path(__file__).parents[1] / "experiments/forbidden_word/swap.yaml"
+# One token per character: 'T' plays the target word, 'S' the other word, 'U' a substitute.
+SETS = {"target": [ord("T")], "other": [ord("S")], "substitute": [ord("U")]}
 
 
 class CharLens:
-    """Stand-in for CoTLens: one token per character, '|' closes the CoT, and the 'lens value'
-    at a position is the code of the character there — so equal values = same token read."""
+    """Stand-in for CoTLens: '|' closes the CoT, and the 'lens value' at a position is the
+    code of the character there — so equal values mean the same token was read."""
 
     def __init__(self) -> None:
-        self.exclude_next = {ord("T")}  # 'T' plays the forbidden word
+        self.token_sets = SETS
         self.max_positions = None
         self.layers = [0]
 
@@ -36,24 +40,39 @@ class CharLens:
 
     def per_position(self, texts: list[str], positions: list[int]) -> dict[str, torch.Tensor]:
         codes = torch.tensor([[[float(ord(t[p])) for p in positions]] for t in texts])
-        return {"target": codes, "other": torch.zeros_like(codes)}
+        return {"target": codes, "other": torch.zeros_like(codes), "substitute": -codes}
 
 
 def _sample(cond: str, prompt: str, completion: str) -> Sample:
     return Sample(Problem("p", "q", None, False), cond, prompt, completion)
 
 
+def _score_cot(lens: Any, source: Sample, prompts: dict[str, str]) -> list[SwapScore] | None:
+    return score_cot(cast(CoTLens, lens), source, prompts, n_bins=2, max_class_positions=64, seed=0)
+
+
+def test_classify_positions_by_next_token():
+    ids = [ord(c) for c in "aTbUcSd"]
+    classes = classify_positions(ids, 0, len(ids), SETS)
+    chars = {c: "".join(chr(ids[p]) for p in ps) for c, ps in classes.items()}
+    # a->T target, b->U substitute, c->S skipped (other word), last char has no next token.
+    assert chars == {"target": "a", "substitute": "b", "neutral": "TUS"}
+
+
 def test_prompts_of_different_length_read_the_same_cot_tokens():
-    source = _sample("forbid", "PROMPT-FORBID:", "abTcd|answer")
-    prompts = {"forbid": "PROMPT-FORBID:", "control": "CTRL:"}
-    scores = score_cot(cast(CoTLens, CharLens()), source, prompts, n_bins=2, seed=0)
+    source = _sample("forbid", "PROMPT-FORBID:", "aTbUcSd|answer")
+    scores = _score_cot(CharLens(), source, {"forbid": "PROMPT-FORBID:", "control": "CTRL:"})
     assert scores is not None
-    by_prompt = {s.prompt_condition: s for s in scores}
-    # Positions a, T-predecessor excluded ('b' precedes 'T'), T, c -> chars a, T, c.
-    expected = (ord("a") + ord("T") + ord("c")) / 3
-    assert by_prompt["forbid"].target_logprob == pytest.approx([expected])
-    assert by_prompt["control"].target_logprob == pytest.approx([expected])
-    assert by_prompt["forbid"].n_positions == 3
+    for s in scores:  # both prompts read exactly the same CoT characters per class
+        assert s.target_logprob == pytest.approx([(ord("T") + ord("U") + ord("S")) / 3])
+        assert s.n_positions == 3
+        assert s.classes["target"] == ClassCurves(1, [ord("a")], [-ord("a")])
+        assert s.classes["substitute"].target_logprob == [ord("b")]
+
+
+def test_class_absent_when_cot_has_no_such_position():
+    scores = _score_cot(CharLens(), _sample("control", "P:", "abcd|x"), {"control": "P:"})
+    assert scores is not None and set(scores[0].classes) == {"neutral"}
 
 
 def test_score_cot_skips_when_a_prompt_retokenises_the_cot_differently():
@@ -63,10 +82,7 @@ def test_score_cot_skips_when_a_prompt_retokenises_the_cot_differently():
             return (ids, start + 1, end) if prompt.startswith("CTRL") else (ids, start, end)
 
     source = _sample("forbid", "P:", "abcd|x")
-    assert (
-        score_cot(cast(CoTLens, Shifting()), source, {"forbid": "P:", "control": "CTRL:"}, 2, 0)
-        is None
-    )
+    assert _score_cot(Shifting(), source, {"forbid": "P:", "control": "CTRL:"}) is None
 
 
 def test_position_bins_and_bin_means():
@@ -75,9 +91,16 @@ def test_position_bins_and_bin_means():
 
 
 def _score(
-    pid: str, prompt: str, logprob: list[float], by_bin: list[list[float | None]]
+    pid: str,
+    prompt: str,
+    logprob: list[float],
+    by_bin: list[list[float | None]],
+    target_class: list[float] | None = None,
 ) -> SwapScore:
-    return SwapScore(pid, "forbid", prompt, [0, 1], 4, logprob, by_bin, [0.0, 0.0])
+    classes = {"neutral": ClassCurves(4, logprob, [0.0, 0.0])}
+    if target_class is not None:
+        classes["target"] = ClassCurves(2, target_class, [0.0, 0.0])
+    return SwapScore(pid, "forbid", prompt, [0, 1], 4, logprob, by_bin, [0.0, 0.0], classes)
 
 
 def test_summarize_swap_pairs_same_problem_and_skips_empty_bins():
@@ -96,6 +119,20 @@ def test_summarize_swap_pairs_same_problem_and_skips_empty_bins():
     assert "forbid-random" not in s["paired"]  # random prompt not scored
 
 
+def test_summarize_classes_uses_only_cots_that_have_the_class():
+    scores = [
+        _score("a", "forbid", [0.0, 0.0], [[0.0], [0.0]], target_class=[-1.0, -5.0]),
+        _score("a", "control", [0.0, 0.0], [[0.0], [0.0]], target_class=[-1.0, -2.0]),
+        _score("b", "forbid", [0.0, 0.0], [[0.0], [0.0]]),  # no violation in this CoT
+        _score("b", "control", [0.0, 0.0], [[0.0], [0.0]]),
+    ]
+    target = summarize_swap(scores, n_bins=1)["by_cot"]["forbid"]["by_class"]["target"]
+    assert (target["n_cots"], target["n_positions"]) == (1, 2)
+    assert [c["mean"] for c in target["paired_target_logprob"]["forbid-control"]] == [0.0, -3.0]
+    assert [c["mean"] for c in target["mean"]["forbid"]["target_logprob"]] == [-1.0, -5.0]
+
+
 def test_swap_config_validates():
     params = SwapParams.model_validate(yaml.safe_load(CONFIG.read_text())["params"])
     assert set(params.cot_conditions) <= set(params.prompt_conditions)
+    assert params.substitutes

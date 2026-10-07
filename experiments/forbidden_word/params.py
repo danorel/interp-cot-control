@@ -63,5 +63,7 @@ class SwapParams(_Strict):
     other: WordSpec
     cot_conditions: list[str]  # whose CoTs to re-read
     prompt_conditions: list[str]  # prompts to re-read them under
+    substitutes: list[str]  # words the model may write instead of the target
+    max_class_positions: int = 64  # per CoT, for the rare target/substitute position classes
     n_bins: int = 5  # bins of relative position within the CoT
     lens: LensParams = Field(default_factory=LensParams)
