@@ -1,6 +1,8 @@
 # Project notes for Claude Code
 
-Mech-interp experiment template. See README.md for layout and extension points.
+Mech-interp study (concluded 2026-10-07): does banning a word in a reasoning model's CoT remove
+it from the residual stream? Built on the interptemp template (`src/interptemp`). See README.md
+for the design, results, reproduce commands and layout.
 
 - Env: `uv` only (`uv run ...`, `uv add ...`). Never pip-install into the project env.
 - vLLM lives in `envs/vllm` (separate env); don't add it to the main pyproject.

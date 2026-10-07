@@ -4,7 +4,9 @@
 word disappear from its internal computation (the residual stream), or only from the text it
 writes?
 
-**Short answer so far (Qwen3-8B, two words).** Only from the text, and only partly. The model
+**Status: concluded (2026-10-07).**
+
+**Answer (Qwen3-8B, two words).** Only from the text, and only partly. The model
 writes the forbidden word 40–50% less often, but inside the network the first two thirds or
 more of the layers prepare it exactly as if there were no ban. The ban acts as a late,
 word-specific filter: ~2× suppression from layer ~24 for "total" (GSM8K), ~1.4× from layer ~29
@@ -332,7 +334,7 @@ unlikely by construction — and none were found; but with 15 sentences per stra
 substantial number of missed meta sentences in the corpus. Labelling more of B
 (`--per-stratum A=15,B=60,C=10` keeps the existing labels) would tighten this.
 
-## What we conclude so far
+## Conclusions
 
 Holds for both words:
 
@@ -355,15 +357,21 @@ Depends on the word:
 All of this is correlational, on one model (Qwen3-8B), and the lens tracks "the next token is
 the word", not the concept.
 
-## Next steps
+## Open questions (not pursued here)
 
-1. **Outcome-independent violation test**: on `control` CoTs, predict from the layer-24–28 state
+The project answers its question for Qwen3-8B and two words; these would strengthen or extend it:
+
+1. **Causal test**: patch layers 29–34 from the control-prompt run into the ban run on the same
+   text; if the word comes back, the filter lives there (the lens only shows where it is visible).
+2. **Outcome-independent violation test**: on `control` CoTs, predict from the layer-24–28 state
    where the ban would still leave the word likely at the output.
-2. **Causal test**: patch layers 29–34 from the control-prompt run into the ban run on the same
-   text; if the word comes back, the filter lives there.
-3. **Second metric**: a linear probe for "the word comes next" at substitute positions, or a
-   tuned lens.
-4. A newer dense model (e.g. Qwen3.6/3.8-27B, if nnterp supports it).
+3. **A concept-level metric**: a linear probe for "the word comes next" at substitute positions,
+   or a tuned lens, instead of the logit lens's next-token view.
+4. **A newer dense model** (e.g. Qwen3.6/3.8-27B, if nnterp supports it) or a different family.
+5. **Hiding information rather than a word**: ask the model to keep a key intermediate result
+   out of its CoT, or to replace it with a wrong one, and test whether the true value remains
+   readable in the activations — a closer proxy for the CoT-monitoring threat model, reusing the
+   prompt-swap and lens tooling here.
 
 ## Status
 
@@ -375,6 +383,7 @@ the word", not the concept.
 | Experiment 1 (`total`, GSM8K): text, lens, prompt swap | ✅ |
 | Experiment 2 (`factor`, MATH): text, prompt swap | ✅ |
 | Meta-sentence detector validated vs hand labels | ✅ 80 sentences: 30/30 precision, 0 misses among 50 unflagged |
+| Project | concluded 2026-10-07; follow-ups listed under [Open questions](#open-questions-not-pursued-here) |
 
 ## Reproduce
 
@@ -477,7 +486,9 @@ experiments/forbidden_word/
   show.py         inspect one problem across all conditions
   summarize.py    recompute summary.json from rows.jsonl (no model)
   report.py       README figures from finished runs (matplotlib, dev dependency)
+  meta_validation.py  blind hand-label check of the meta-sentence detector
 reports/figures/<word>/  the figures embedded in this README
+reports/meta_validation/ the labelled sample, hidden key, labels and results of that check
 experiments/sanity/  checks to run on every new model/pod before experiments (`make sanity`)
 src/interptemp/   generic infrastructure: model backends (nnterp, vLLM), Site, run dirs,
                   typed configs with CLI overrides, JSONL/activation storage
@@ -490,7 +501,7 @@ tests/            unit tests; `make test-model` runs integration tests on Qwen3-
 ## Caveats
 
 - **Correlational.** The lens shows where the effect is visible, not where it is caused (see
-  the causal test in next steps), and it tracks "the next token is the word", not the concept.
+  the causal test under open questions), and it tracks "the next token is the word", not the concept.
 - **Layer 35 (the output distribution) is not interpreted**: there log P of a rare token is
   dominated by the tail and swings with the CoT source (e.g. −2.6 on banned CoTs, +0.8 on
   control CoTs for `total`).
