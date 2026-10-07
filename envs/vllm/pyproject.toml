@@ -4,4 +4,31 @@
 name = "interptemp-vllm"
 version = "0.1.0"
 requires-python = ">=3.12,<3.13"
-dependencies = ["vllm>=0.10"]
+# torch* are vLLM's own pins, listed directly because uv applies [tool.uv.sources] only to
+# direct dependencies.
+dependencies = [
+    "vllm==0.31.0",
+    "torch==2.13.0",
+    "torchvision==0.28.0",
+    "torchaudio==2.11.0",
+    "torchcodec==0.16.0",  # vLLM needs >=0.14; 0.16 is the newest +cu129 build
+]
+
+[tool.uv]
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
+
+# PyPI's vLLM / torch wheels target CUDA 13, which fails on pods whose driver is CUDA 12.x
+# ("NVIDIA driver is too old"). Use vLLM's official +cu129 build and the matching torch
+# family; CUDA 12.9 runs on any 12.x driver >= 12.8 via minor-version compatibility.
+# Bumping vLLM: change the version here and in the wheel URL, and match its torch pins.
+[tool.uv.sources]
+vllm = { url = "https://github.com/vllm-project/vllm/releases/download/v0.31.0/vllm-0.31.0+cu129-cp38-abi3-manylinux_2_28_x86_64.whl" }
+torch = { index = "pytorch-cu129" }
+torchvision = { index = "pytorch-cu129" }
+torchaudio = { index = "pytorch-cu129" }
+torchcodec = { index = "pytorch-cu129" }
+
+[[tool.uv.index]]
+name = "pytorch-cu129"
+url = "https://download.pytorch.org/whl/cu129"
+explicit = true
