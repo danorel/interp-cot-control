@@ -1,7 +1,7 @@
 # Forbidden word in CoT: does the instruction remove the word from the residual stream or
 # only from the text? See experiment.py docstring for conditions / stages.
-#   smoke:  uv run interp-run experiments/forbidden_word/config.yaml params.n_problems=2 generation.max_new_tokens=512  (~4 min)
-#   full:   uv run interp-run experiments/forbidden_word/config.yaml  (~8h on M5 CPU, generation-bound)
+#   smoke:  uv run interp-run experiments/forbidden_word/config_total.yaml params.n_problems=2 generation.max_new_tokens=512  (~4 min)
+#   full:   uv run interp-run experiments/forbidden_word/config_total.yaml  (~8h on M5 CPU, generation-bound)
 #   bigger: ... model=configs/models/qwen3-8b.yaml model.chat_template_kwargs.enable_thinking=true
 #   resume: ... params.generations_from=outputs/forbidden_word/<stamp>/generations.jsonl
 name: forbidden_word

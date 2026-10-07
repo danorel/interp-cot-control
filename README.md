@@ -206,11 +206,65 @@ concept.
    on the same CoT text; if P(`total`) recovers, the suppression is mediated there.
 5. **Second metric** — linear probe for "`total` comes next" at substitute positions, and/or a
    tuned lens.
-6. Replicate on a larger / newer dense model and another word/dataset; validate the
-   meta-sentence regex on hand labels.
+6. Replicate on another word/dataset (experiment 2 below, in progress) and on a newer dense
+   model; validate the meta-sentence regex on hand labels.
 
 Figures: `uv run python -m experiments.forbidden_word.report --main <lens run> --swap <swap run>`
 (writes `reports/figures/`).
+
+## Experiment 2: "factor" on MATH (in progress)
+
+**Why.** Experiment 1 answers the question for one model, one word and one dataset. Of these,
+the word is the weakest point: `total` is an everyday word with ready synonyms (`sum`,
+`combined`), so "a late filter swaps it for a synonym" might be a property of easily
+replaceable words rather than of prohibitions in general. Before spending GPU time on a larger
+model we test this cheaply on the same Qwen3-8B with a word that is hard to replace. A larger
+model of the same family (e.g. Qwen3-32B, released together with 8B) would only test scale with
+the same training recipe, so it was judged less informative for this question.
+
+**How the word was chosen.** Candidate words were counted in the reference solutions of the
+MATH test set (5,000 problems, 7 subjects) and checked with the Qwen tokenizer:
+
+| word | solutions using it | of which not in the question | ` word` tokens |
+|---|---|---|---|
+| equation | 787 | 634 | 1 |
+| **factor** | **595** | **509** | **1** |
+| integer | 526 | 165 | 1 |
+| triangle | 469 | 204 | 1 |
+| square | 434 | 251 | 1 |
+| prime | 225 | 139 | 1 |
+
+`factor` was picked over `equation` because it is a technical term with no everyday synonym:
+avoiding it forces a paraphrase ("write it as a product", "divides"), the opposite of `total`.
+It is frequent, mostly absent from the questions (so the prompt rarely primes it) and a single
+token; `factorial` is a different token and is excluded from the forms. Some forms split into
+a generic prefix (`factored` → ` fact` + `ored`, which would also match "in fact"), so the lens
+reads off single-token variants only (`lens.single_token_words`); text counting still sees all
+forms.
+
+**Design changes vs experiment 1** (prompts and conditions are otherwise identical):
+
+| | experiment 1 | experiment 2 |
+|---|---|---|
+| dataset | GSM8K test | MATH test, levels 1–3, all 7 subjects |
+| problems | 120 of 1,319 whose solution uses `total` | 120 of 222 whose solution uses `factor` (27 have it in the question; 28 in exp. 1) |
+| target / random word | `total` / `sum` | `factor` / `divisor` (close in meaning, 91 solutions) |
+| substitutes (swap) | sum, overall, combined, altogether, aggregate | divisor, product, multiple |
+| max new tokens | 8,192 | 12,000 (MATH reasoning runs longer) |
+| answer check | number after `####` | last `\boxed{}`, normalised LaTeX or numeric value |
+
+Levels 4–5 hold 370 of the 593 `factor` problems but would often be truncated, and their much
+longer CoTs would make the two experiments hard to compare.
+
+**What we expect.** If the mechanism is general: again no effect in layers 0–23 on the same
+text and a word-specific filter around layers 24–34. In text: weaker compliance than for
+`total` (no easy synonym), more violations and possibly more meta sentences.
+
+```bash
+uv run interp-run experiments/forbidden_word/config_factor.yaml                    # generation (vLLM)
+uv run interp-run experiments/forbidden_word/swap_factor.yaml \
+    params.generations=outputs/forbidden_word_factor/<stamp>/generations.jsonl     # prompt swap
+```
 
 ## Quickstart
 
@@ -219,12 +273,12 @@ uv sync
 make check                       # lint + typecheck + unit tests (no model, seconds)
 
 # One problem × five conditions (~5 min on Mac CPU), then inspect it side by side:
-mkdir -p logs && PYTHONUNBUFFERED=1 uv run interp-run experiments/forbidden_word/config.yaml \
+mkdir -p logs && PYTHONUNBUFFERED=1 uv run interp-run experiments/forbidden_word/config_total.yaml \
     params.n_problems=1 2>&1 | tee logs/forbidden_word-$(date +%Y%m%d-%H%M%S).log
 uv run python -m experiments.forbidden_word.show "$(ls -td outputs/forbidden_word/*/ | head -1)"
 
 # Full run (120 problems):
-uv run interp-run experiments/forbidden_word/config.yaml
+uv run interp-run experiments/forbidden_word/config_total.yaml
 ```
 
 Any config value can be overridden from the CLI with dotted keys, e.g.
@@ -245,8 +299,8 @@ and runs a real CUDA kernel in both envs. Run experiments inside `tmux`.
 git clone https://github.com/danorel/interp-cot-control.git && cd interp-cot-control
 WITH_VLLM=1 bash infra/setup_pod.sh
 make sanity        # model/backend checks (HF parity, batching, ablation) — must pass first
-uv run interp-run experiments/forbidden_word/config.yaml model=configs/models/qwen3-8b-vllm.yaml
-uv run interp-run experiments/forbidden_word/config.yaml \
+uv run interp-run experiments/forbidden_word/config_total.yaml model=configs/models/qwen3-8b-vllm.yaml
+uv run interp-run experiments/forbidden_word/config_total.yaml \
     model=configs/models/qwen3-8b.yaml model.chat_template_kwargs.enable_thinking=true \
     params.generations_from=outputs/forbidden_word/<stamp>/generations.jsonl
 ```
@@ -270,7 +324,8 @@ every batch. Pull results back with `rsync -avz <host>:<proj>/outputs/ outputs/`
 
 ```
 experiments/forbidden_word/
-  config.yaml     conditions, words, dataset, generation and lens settings
+  config_total.yaml   experiment 1: "total" on GSM8K (conditions, words, dataset, generation, lens)
+  config_factor.yaml  experiment 2: "factor" on MATH (vLLM generation config)
   experiment.py   orchestration: generate -> score text -> lens -> summarize
   params.py       typed schema of `params:` + prompt construction
   data.py         Problem -> Sample -> Record; GSM8K loading; (de)serialisation
@@ -279,7 +334,7 @@ experiments/forbidden_word/
   stats.py        bootstrap CIs, paired contrasts, metric table
   show.py         inspect one problem across all conditions
   summarize.py    recompute summary.json from rows.jsonl (no model)
-  swap.py, swap.yaml  prompt swap: same CoT under every condition's prompt (same-text lens),
+  swap.py, swap.yaml, swap_factor.yaml  prompt swap: same CoT under every condition's prompt (same-text lens),
                   positions split into neutral / target / substitute / meta
   report.py       README figures from finished runs (matplotlib, dev dependency)
 reports/figures/  the figures embedded in this README
