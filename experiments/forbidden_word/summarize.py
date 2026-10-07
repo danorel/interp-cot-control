@@ -1,6 +1,6 @@
 """Recompute a run's summary.json from its rows.jsonl — after changing metrics, no model needed.
 
-uv run python -m experiments.forbidden_word.summarize outputs/forbidden_word/<stamp>
+uv run python -m experiments.forbidden_word.summarize outputs/forbidden_word_total/<stamp>
 """
 
 from __future__ import annotations

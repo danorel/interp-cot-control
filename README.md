@@ -93,8 +93,8 @@ left out of the figures (see [Caveats](#caveats)).
 ## Experiment 1: "total" on GSM8K
 
 Qwen3-8B, 120 problems × 5 conditions = 600 CoTs, T=0.6, top-p 0.95, up to 8,192 new tokens
-(1–2% truncated). Runs: generations `outputs/forbidden_word/20261007-112023`, text + lens
-`outputs/forbidden_word/20261007-113706`, prompt swap `outputs/forbidden_word_swap/20261007-151030`
+(1–2% truncated). Runs: generations `outputs/forbidden_word_total/20261007-112023`, text + lens
+`outputs/forbidden_word_total/20261007-113706`, prompt swap `outputs/forbidden_word_total_swap/20261007-151030`
 (`outputs/` is not in git). Pilots on Qwen3-0.6B showed no compliance, so it is not used.
 
 ### In the text: the ban halves the word, specifically
@@ -359,7 +359,7 @@ make check                       # lint + typecheck + unit tests (no model, seco
 # One problem × five conditions (~5 min on Mac CPU), then inspect it side by side:
 mkdir -p logs && PYTHONUNBUFFERED=1 uv run interp-run experiments/forbidden_word/config_total.yaml \
     params.n_problems=1 2>&1 | tee logs/forbidden_word-$(date +%Y%m%d-%H%M%S).log
-uv run python -m experiments.forbidden_word.show "$(ls -td outputs/forbidden_word/*/ | head -1)"
+uv run python -m experiments.forbidden_word.show "$(ls -td outputs/forbidden_word_total/*/ | head -1)"
 ```
 
 Any config value can be overridden from the CLI with dotted keys, e.g.
@@ -384,9 +384,9 @@ uv run interp-run experiments/forbidden_word/config_total.yaml model=configs/mod
     generation.max_new_tokens=8192
 uv run interp-run experiments/forbidden_word/config_total.yaml \
     model=configs/models/qwen3-8b.yaml model.chat_template_kwargs.enable_thinking=true \
-    generation.max_new_tokens=8192 params.generations_from=outputs/forbidden_word/<stamp>/generations.jsonl
-uv run interp-run experiments/forbidden_word/swap.yaml \
-    params.generations=outputs/forbidden_word/<stamp>/generations.jsonl
+    generation.max_new_tokens=8192 params.generations_from=outputs/forbidden_word_total/<stamp>/generations.jsonl
+uv run interp-run experiments/forbidden_word/swap_total.yaml \
+    params.generations=outputs/forbidden_word_total/<stamp>/generations.jsonl
 
 # Experiment 2: generation (vLLM), prompt swap
 uv run interp-run experiments/forbidden_word/config_factor.yaml
@@ -414,13 +414,31 @@ saved after every batch. Pull results back with `rsync -avz <host>:<proj>/output
 | `summary.json` | per-condition rates with CIs; paired contrasts (`text.paired.<metric>`, `lens.paired_target_logprob`); recompute with `python -m experiments.forbidden_word.summarize <run_dir>` |
 | `swap_rows.jsonl` (swap runs) | per (CoT, prompt): lens curves for ordinary positions, by CoT position, and per position class |
 
+Runs behind this README (Qwen3-8B on an A100 unless noted; `outputs/` is not in git):
+
+| run | what it is |
+|---|---|
+| `forbidden_word_total/20261007-112023` | exp. 1 generation: 120 problems × 5 conditions, vLLM, 8,192 tokens |
+| `forbidden_word_total/20261007-113706` | exp. 1 text metrics + lens on the written texts |
+| `forbidden_word_total_swap/20261007-151030` | exp. 1 prompt swap with all position classes (**final**, figures) |
+| `forbidden_word_total_swap/20261007-130027`, `…-143345` | earlier exp. 1 swaps: no position classes / no `meta` class |
+| `forbidden_word_total/20261007-110509`, `…-111323` | 10-problem pilot: generation (2,048 tokens), lens |
+| `forbidden_word_total/20261007-110801` | pilot lens attempt that crashed (CPU/GPU device bug); generations only |
+| `forbidden_word_total/20261005-*`, `forbidden_word_total_swap/20261007-145859`, `…-163026` | Qwen3-0.6B smoke runs on the Mac CPU (the 2026-10-05 ones use an older output format) |
+| `forbidden_word_factor/20261007-155444` | exp. 2 generation: 120 MATH problems × 5 conditions, 12,000 tokens |
+| `forbidden_word_factor_swap/20261007-161658` | exp. 2 prompt swap with all position classes (figures) |
+| `sanity/20261007-110319` | `make sanity` on the A100, all checks pass |
+
+Runs made before the rename keep the old directory names (`outputs/forbidden_word/…`) inside
+their resolved `config.yaml`.
+
 ## Layout
 
 ```
 experiments/forbidden_word/
   config_total.yaml   experiment 1: "total" on GSM8K
   config_factor.yaml  experiment 2: "factor" on MATH
-  swap.yaml, swap_factor.yaml   prompt-swap configs for the two experiments
+  swap_total.yaml, swap_factor.yaml   prompt-swap configs for the two experiments
   experiment.py   orchestration: generate -> score text -> lens -> summarize
   swap.py         prompt swap: same CoT under every condition's prompt; position classes
   params.py       typed schema of `params:` + prompt construction

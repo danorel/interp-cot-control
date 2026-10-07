@@ -1,4 +1,4 @@
-# Prompt swap for experiment 2 ("factor" on MATH); see swap.yaml and swap.py.
+# Prompt swap for experiment 2 ("factor" on MATH); see swap_total.yaml and swap.py.
 #   uv run interp-run experiments/forbidden_word/swap_factor.yaml \
 #       params.generations=outputs/forbidden_word_factor/<stamp>/generations.jsonl
 name: forbidden_word_factor_swap

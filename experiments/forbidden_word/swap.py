@@ -15,7 +15,7 @@ Positions are split by the token that comes next in the CoT:
                 under a prohibition
     substitute  a word the model may use instead of the target ("sum", "overall", ...)
 
-    uv run interp-run experiments/forbidden_word/swap.yaml
+    uv run interp-run experiments/forbidden_word/swap_total.yaml
 """
 
 from __future__ import annotations

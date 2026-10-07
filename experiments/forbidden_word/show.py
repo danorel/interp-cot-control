@@ -1,6 +1,6 @@
 """Print one problem across all conditions: instruction, text metrics, lens, and the CoT.
 
-uv run python -m experiments.forbidden_word.show outputs/forbidden_word/<stamp>
+uv run python -m experiments.forbidden_word.show outputs/forbidden_word_total/<stamp>
 uv run python -m experiments.forbidden_word.show <run_dir> --problem openai/gsm8k:465 --cot-chars 2000
 """
 

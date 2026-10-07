@@ -1,13 +1,13 @@
 # Prompt swap: re-read each CoT under every condition's prompt (see swap.py docstring).
 # Needs a finished generation run; the model must match the one that generated it.
-#   pod:   uv run interp-run experiments/forbidden_word/swap.yaml   (~10-15 min on A100)
+#   pod:   uv run interp-run experiments/forbidden_word/swap_total.yaml   (~10-15 min on A100)
 #   smoke: ... model=configs/models/qwen3-0.6b.yaml params.n_problems=1
-name: forbidden_word_swap
+name: forbidden_word_total_swap
 target: experiments.forbidden_word.swap:PromptSwapExperiment
 seed: 0
 model: configs/models/qwen3-8b.yaml   # thinking flag is irrelevant: prompts come pre-formatted
 params:
-  generations: outputs/forbidden_word/20261007-112023/generations.jsonl
+  generations: outputs/forbidden_word_total/20261007-112023/generations.jsonl
   n_problems: null
   target:
     word: total

@@ -19,7 +19,7 @@ from experiments.forbidden_word.swap import (
     tokens_in_spans,
 )
 
-CONFIG = Path(__file__).parents[1] / "experiments/forbidden_word/swap.yaml"
+CONFIG = Path(__file__).parents[1] / "experiments/forbidden_word/swap_total.yaml"
 # One token per character: 'T' plays the target word, 'S' the other word, 'U' a substitute.
 SETS = {"target": [ord("T")], "other": [ord("S")], "substitute": [ord("U")]}
 

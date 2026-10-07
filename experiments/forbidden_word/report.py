@@ -1,8 +1,8 @@
 """Static figures for the README, built from finished runs (no model needed).
 
     uv run python -m experiments.forbidden_word.report \
-        --main outputs/forbidden_word/<generation or lens run> \
-        --swap outputs/forbidden_word_swap/<swap run> \
+        --main outputs/forbidden_word_total/<generation or lens run> \
+        --swap outputs/forbidden_word_total_swap/<swap run> \
         --out reports/figures/total
 
 The words (target, other, substitutes) are read from the swap run's config, so the same code
