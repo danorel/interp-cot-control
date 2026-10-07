@@ -1,0 +1,89 @@
+{
+  "n_labeled": 80,
+  "n_unsure": 0,
+  "by_experiment": {
+    "factor": {
+      "strata": {
+        "A": {
+          "n": 15,
+          "human_yes": 15,
+          "rate": 1.0,
+          "rate_ci95": [
+            0.7961107336956521,
+            1.0
+          ]
+        },
+        "B": {
+          "n": 15,
+          "human_yes": 0,
+          "rate": 0.0,
+          "rate_ci95": [
+            -1.3877787807814457e-17,
+            0.20388926630434784
+          ]
+        },
+        "C": {
+          "n": 10,
+          "human_yes": 0,
+          "rate": 0.0,
+          "rate_ci95": [
+            -2.7755575615628914e-17,
+            0.2775401687666166
+          ]
+        }
+      },
+      "precision": 1.0,
+      "recall": 1.0,
+      "est_true_meta_sentences": 132.0,
+      "flagged_sentences": 132
+    },
+    "total": {
+      "strata": {
+        "A": {
+          "n": 15,
+          "human_yes": 15,
+          "rate": 1.0,
+          "rate_ci95": [
+            0.7961107336956521,
+            1.0
+          ]
+        },
+        "B": {
+          "n": 15,
+          "human_yes": 0,
+          "rate": 0.0,
+          "rate_ci95": [
+            -1.3877787807814457e-17,
+            0.20388926630434784
+          ]
+        },
+        "C": {
+          "n": 10,
+          "human_yes": 0,
+          "rate": 0.0,
+          "rate_ci95": [
+            -2.7755575615628914e-17,
+            0.2775401687666166
+          ]
+        }
+      },
+      "precision": 1.0,
+      "recall": 1.0,
+      "est_true_meta_sentences": 268.0,
+      "flagged_sentences": 268
+    }
+  },
+  "sample_agreement": {
+    "n": 80,
+    "n_scored": 80,
+    "n_judge_missing": 0,
+    "accuracy": 1.0,
+    "kappa": 1.0,
+    "confusion": {
+      "judge=no|human=no": 50,
+      "judge=yes|human=yes": 30
+    }
+  },
+  "false_positives": [],
+  "misses": []
+}

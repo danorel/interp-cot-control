@@ -53,6 +53,9 @@ reads "reasoning" as the thinking block).
   word are not counted as uses.
 - Fully clean CoTs (zero uses), mentions of the grader, accuracy, truncation.
 
+Meta sentences are detected with regular expressions, validated against blind hand labels
+(see [Validation of the meta-sentence detector](#validation-of-the-meta-sentence-detector)).
+
 ### What we measure inside the model: the logit lens
 
 The model processes the text token by token. Over 36 layers it builds an internal vector for
@@ -303,6 +306,32 @@ is even up to ~1.7× less likely around layer 20); the strong late suppression i
 | banning the similar word raises the target late | yes, 1.1–1.35× | no |
 | monitoring threat | ≈ nothing | ≈ nothing |
 
+## Validation of the meta-sentence detector
+
+The meta-sentence rates and the `meta` position class rest on a regex detector, so it was
+checked against blind hand labels (`experiments/forbidden_word/meta_validation.py`, data in
+`reports/meta_validation/`). Sentences from the banned conditions' CoTs of both experiments
+were split into three strata and sampled per experiment:
+
+| stratum | what | in the corpus (`total` / `factor`) | sampled per experiment | human "meta" |
+|---|---|---|---|---|
+| A | flagged by the detector | 268 / 132 | 15 | **15/15** and **15/15** |
+| B | not flagged, but contains the word, the similar word or "word", "use", "avoid", "instead", "rule", … | 2,040 / 3,793 | 15 | 0/15 and 0/15 |
+| C | not flagged, the rest | 19,084 / 39,233 | 10 | 0/10 and 0/10 |
+
+The labeler saw only the sentence and the one before it, in shuffled order, without the
+detector's call. Result: **precision 30/30** (95% CI 0.80–1.00 per experiment), **no misses**
+among the 50 unflagged sentences, Cohen's κ = 1.00. Two sentences first labelled "meta" by a
+slip of the key ("So total wolves killed: 10 + 36 = 46.") were re-labelled blind as "not meta";
+the original labels are kept in `labels.backup.jsonl`.
+
+What this does and does not show: the detector's flags can be trusted (no false positives).
+For recall, stratum B is where misses would be — a meta sentence without any of those words is
+unlikely by construction — and none were found; but with 15 sentences per stratum the upper
+95% bound on the miss rate in B is ~20%, which, scaled to B's size, cannot rule out a
+substantial number of missed meta sentences in the corpus. Labelling more of B
+(`--per-stratum A=15,B=60,C=10` keeps the existing labels) would tighten this.
+
 ## What we conclude so far
 
 Holds for both words:
@@ -334,8 +363,7 @@ the word", not the concept.
    text; if the word comes back, the filter lives there.
 3. **Second metric**: a linear probe for "the word comes next" at substitute positions, or a
    tuned lens.
-4. A newer dense model (e.g. Qwen3.6/3.8-27B, if nnterp supports it); hand labels for the
-   meta-sentence detector.
+4. A newer dense model (e.g. Qwen3.6/3.8-27B, if nnterp supports it).
 
 ## Status
 
@@ -346,7 +374,7 @@ the word", not the concept.
 | `make sanity` on GPU / Qwen3-8B | ✅ all 7 checks pass (HF parity max diff 0.0) |
 | Experiment 1 (`total`, GSM8K): text, lens, prompt swap | ✅ |
 | Experiment 2 (`factor`, MATH): text, prompt swap | ✅ |
-| Meta-sentence detector validated vs hand labels | ❌ todo (`meta_sentences` are saved for this) |
+| Meta-sentence detector validated vs hand labels | ✅ 80 sentences: 30/30 precision, 0 misses among 50 unflagged |
 
 ## Reproduce
 
@@ -471,8 +499,9 @@ tests/            unit tests; `make test-model` runs integration tests on Qwen3-
 - **Same-text pairing removes almost all noise**, so even tiny shifts have CIs excluding zero;
   read magnitudes (within ±5% is practically no effect).
 - **Violations are selected by outcome**, which biases their contrast near the output toward zero.
-- **Meta detection is regex-based.** Validate it on ~50 hand-labelled CoTs before trusting
-  refusal rates; matched sentences are saved in `rows.jsonl` (`text.meta_sentences`).
+- **Meta detection is regex-based**, validated on 80 hand-labelled sentences (precision 30/30,
+  no misses among 50 unflagged). The sample cannot bound corpus-level recall tightly; see the
+  validation section.
 - **The similar word** (`sum`, `divisor`) is close in meaning and rare, so `random` tests
   specificity rather than "a ban of equal difficulty".
 - **The `total` token set includes `Tot` / ` Tot`** (first token of "Totals"), a generic prefix
