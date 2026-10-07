@@ -1,8 +1,7 @@
 # interp-cot-control
 
 **Question.** If a reasoning model is told *not* to use a word in its chain of thought, does
-the word disappear from its internal computation (the residual stream), or only from the
-text it writes?
+the word disappear from its internal computation (the residual stream), or only from the text it writes?
 
 **Setup.** Qwen3 thinking models on GSM8K test problems whose reference solution naturally
 uses the target word (`total`, 46% of the test set). Each problem is solved under five
@@ -44,7 +43,7 @@ contrast — for word counts and per-layer lens log-probs.
 | Pipeline end-to-end on Qwen3-0.6B, Mac CPU | ✅ 1–3 problem smoke runs |
 | Full run (120 problems × 5 conditions) | ❌ not yet (~8 h on M5 CPU; minutes on a GPU) |
 | `make sanity` on GPU / Qwen3-8B | ❌ not yet |
-| vLLM generation on GPU (`envs/vllm`) | ❌ never run — try 1 problem first |
+| vLLM generation on GPU (`envs/vllm`) | ✅ smoke: Qwen3-0.6B on A100 80GB, driver 570 (CUDA 12.8) |
 | Meta/refusal regex validated vs hand labels | ❌ todo (`meta_sentences` are saved for this) |
 
 Early observation (n ≤ 3, not a result): Qwen3-0.6B largely ignores the prohibition in text,
@@ -73,9 +72,14 @@ log-probs at five layers, and the CoT with the target word highlighted.
 
 ### On a GPU box (two stages)
 
-Generation with vLLM, then the lens with nnterp on the same generations:
+Generation with vLLM, then the lens with nnterp on the same generations. Rent 1× A100 80GB
+with an Ubuntu + CUDA ≥ 12.6 image (no Docker image needed); torch is pinned to cu126 and
+vLLM to its cu129 build, because PyPI's CUDA 13 wheels fail on most rented-pod drivers.
+`setup_pod.sh` puts caches on `/workspace` or `/ephemeral` if present, checks the driver
+and runs a real CUDA kernel in both envs. Run experiments inside `tmux`.
 
 ```bash
+git clone https://github.com/danorel/interp-cot-control.git && cd interp-cot-control
 WITH_VLLM=1 bash infra/setup_pod.sh
 make sanity        # model/backend checks (HF parity, batching, ablation) — must pass first
 uv run interp-run experiments/forbidden_word/config.yaml model=configs/models/qwen3-8b-vllm.yaml
