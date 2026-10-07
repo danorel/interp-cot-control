@@ -42,8 +42,10 @@ contrast — for word counts and per-layer lens log-probs.
 |---|---|
 | Pipeline end-to-end on Qwen3-0.6B, Mac CPU | ✅ 1–3 problem smoke runs |
 | Full run (120 problems × 5 conditions) | ❌ not yet (~8 h on M5 CPU; minutes on a GPU) |
-| `make sanity` on GPU / Qwen3-8B | ❌ not yet |
-| vLLM generation on GPU (`envs/vllm`) | ✅ smoke: Qwen3-0.6B on A100 80GB, driver 570 (CUDA 12.8) |
+| GPU pod setup (`infra/setup_pod.sh`) | ✅ A100 80GB, driver 570 (CUDA 12.8); CUDA kernel check in both envs |
+| `make sanity` on GPU / Qwen3-8B | ✅ all 7 checks pass (HF parity max diff 0.0) |
+| vLLM generation on GPU (`envs/vllm`) | ✅ smoke: Qwen3-0.6B on the same pod |
+| This experiment on GPU (vLLM → nnterp lens, Qwen3-8B) | ❌ not yet — start with a 10-problem pilot |
 | Meta/refusal regex validated vs hand labels | ❌ todo (`meta_sentences` are saved for this) |
 
 Early observation (n ≤ 3, not a result): Qwen3-0.6B largely ignores the prohibition in text,
