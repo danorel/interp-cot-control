@@ -37,6 +37,17 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/interptemp"]
 
+# PyPI's Linux torch wheels target the newest CUDA (cu130), which rented pods' drivers often
+# don't support (e.g. driver 570 = CUDA 12.8). cu126 runs on any driver >= 560 and still
+# ships current torch; macOS keeps PyPI wheels.
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu126", marker = "sys_platform == 'linux'" }]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
