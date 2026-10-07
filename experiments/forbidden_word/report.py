@@ -39,7 +39,7 @@ REF = "#898781"  # reference series / muted ink
 INK, INK_2, GRID, AXIS, SURFACE = "#0b0b0b", "#52514e", "#e1e0d9", "#c3c2b7", "#fcfcfb"
 LATE_BAND = (24, 34)  # where the word-specific suppression sits in Qwen3-8B
 N_LENS_LAYERS = 35  # layers 0..34
-MULTIPLIERS = (1 / 16, 1 / 8, 1 / 4, 1 / 2, 2 / 3, 1, 1.5, 2, 4)
+MULTIPLIERS = (1 / 16, 1 / 8, 1 / 4, 1 / 2, 2 / 3, 0.8, 1, 1.25, 1.5, 2, 4)
 
 CI = list[dict[str, float]]  # per layer: {"mean", "lo", "hi", "n"}
 
@@ -105,8 +105,9 @@ def _multiplier_axis(ax: Axes, ylabel: str) -> None:
     """Log-difference axis labelled as plain multipliers."""
     lo, hi = ax.get_ylim()
     ticks = [m for m in MULTIPLIERS if lo <= math.log(m) <= hi]
-    if len(ticks) > 6:
-        ticks = [m for m in ticks if m not in (2 / 3, 1.5)]
+    for coarse in ((0.8, 1.25), (2 / 3, 1.5)):  # drop the finest steps while crowded
+        if len(ticks) > 6:
+            ticks = [m for m in ticks if m not in coarse]
     ax.set_yticks([math.log(m) for m in ticks], [_multiplier_label(m) for m in ticks])
     ax.set_ylabel(ylabel)
 
@@ -169,7 +170,7 @@ def fig_swap_contrasts(swap: dict[str, Any], w: Words, out: Path) -> Path:
     paired = swap["by_cot"]["forbid"]["paired"]
     t, o = w.q(w.target), w.q(w.other)
     fig = _contrast_figure(
-        f"Same text, different instruction: {t} is suppressed only in late layers",
+        f"Where does the ban act? Same text, two prompts, by layer ({t})",
         f"Each line compares two prompts on the identical CoT (written under the ban): how much "
         f"likelier the model is\nto say {t} next under prompt A than B. Shaded: 95% CI over "
         f"problems. Flat at “no change” = the instruction does nothing there.",
@@ -194,7 +195,7 @@ def fig_text_artifact(
     if not main.get("lens"):
         return None
     fig = _contrast_figure(
-        "Comparing different texts created a fake mid-layer effect",
+        f"Ban vs control for {w.q(w.target)}: different texts vs the same text",
         f"Ban vs control for {w.q(w.target)}, measured two ways. Dashed: each prompt read on the "
         f"CoT it wrote (texts differ).\nSolid: the same CoT read under both prompts. Only the "
         f"late drop survives when the text is held fixed.",
@@ -229,7 +230,7 @@ def fig_position_heatmap(swap: dict[str, Any], w: Words, out: Path) -> Path:
     ax.set_ylabel("Layer")
     _titles(
         ax,
-        "The late filter acts throughout the reasoning",
+        f"Ban on {w.q(w.target)} vs ban on {w.q(w.other)}, by layer and part of the CoT",
         f"Ban on {w.q(w.target)} vs ban on {w.q(w.other)}, same CoT. "
         f"Cell: how many times less (÷)\nor more (×) likely {w.q(w.target)} is next. "
         f"Blue = suppressed. Layers 0–15 are all ≈ same.",
@@ -265,7 +266,7 @@ def fig_text_rate(main: dict[str, Any], w: Words, out: Path) -> Path:
     ax.set_yticks(y, [names[c] for c in order])
     ax.set_xlabel(f"Uses of {w.q(w.target)} per 1,000 characters of reasoning (mean, 95% CI)")
     ax.set_title(
-        f"In the text, banning {w.q(w.target)} cuts its use by {cut:.0%}; banning {w.q(w.other)} does not",
+        f"Uses of {w.q(w.target)} in the reasoning (the ban cuts it by {cut:.0%})",
         loc="left",
     )
     return _save(fig, out, "text_rate.png")
@@ -278,7 +279,7 @@ def fig_violations(swap: dict[str, Any], w: Words, out: Path) -> Path | None:
         return None
     t = w.q(w.target)
     fig = _contrast_figure(
-        "Where the model breaks the rule, the filter is no stronger than usual",
+        f"Ban vs control where the next word is {t}: natural uses vs violations",
         f"Ban vs control on the same CoT, at positions where the next word is {t}. Blue: CoTs "
         f"written without a ban,\nwhere the model naturally says {t}. Orange: CoTs written under "
         f"the ban, where it said {t} anyway.",
@@ -309,7 +310,7 @@ def fig_substitutes(swap: dict[str, Any], w: Words, out: Path) -> Path | None:
     _layer_axes(ax, "late layers 24–34")
     _titles(
         ax,
-        f"Before a substitute, {w.q(w.target)} stays a strong hidden candidate until late layers",
+        f"Is {w.q(w.target)} a hidden candidate where the model writes a substitute?",
         f"Positions where the model is about to write {subs}; each CoT read under its own "
         f"prompt.\nA gap between blue and orange = under the ban the model was “thinking” "
         f"{w.q(w.target)} where it wrote the substitute.",
@@ -324,7 +325,7 @@ def fig_meta(swap: dict[str, Any], w: Words, out: Path) -> Path | None:
         return None
     t = w.q(w.target)
     fig = _contrast_figure(
-        f"Reasoning about the rule boosts {t} mid-network, then it is suppressed hardest",
+        f"Ban vs control inside meta sentences vs ordinary reasoning ({t})",
         f"Ban vs control on the same CoT. Orange: inside meta sentences, where the model talks "
         f"about the word\n(“the problem says not to use the word {t}”). Above “no change” = "
         f"{t} likelier because of the ban.",
