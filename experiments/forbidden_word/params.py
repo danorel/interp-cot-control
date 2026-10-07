@@ -51,3 +51,17 @@ class Params(_Strict):
             target=self.target.word, other=self.other.word
         )
         return "\n\n".join(part for part in (question, self.answer_format, instruction) if part)
+
+
+class SwapParams(_Strict):
+    """Prompt swap: re-read each CoT under every condition's prompt (prompts are taken from
+    the generations file, so they are exactly the ones used for sampling)."""
+
+    generations: Path  # generations.jsonl of a finished run
+    n_problems: int | None = None  # first N problems of the file; None = all
+    target: WordSpec
+    other: WordSpec
+    cot_conditions: list[str]  # whose CoTs to re-read
+    prompt_conditions: list[str]  # prompts to re-read them under
+    n_bins: int = 5  # bins of relative position within the CoT
+    lens: LensParams = Field(default_factory=LensParams)

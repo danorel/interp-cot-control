@@ -53,20 +53,31 @@ class SetStats:
 
 
 @torch.inference_mode()
-def lens_stats(
+def lens_per_position(
     h: torch.Tensor, unembed: Unembed, token_sets: Mapping[str, Sequence[int]], topk: int
-) -> dict[str, SetStats]:
-    """h: [n_positions, d_model] residuals of one layer."""
+) -> dict[str, tuple[torch.Tensor, torch.Tensor]]:
+    """h: [..., d_model] residuals of one layer -> per set: (log P(any token of the set),
+    1.0 if a token of the set is in the top-k else 0.0), each shaped like h[..., 0], on CPU."""
     logits = unembed(h).float()
     log_z = logits.logsumexp(-1)
     top = logits.topk(topk, dim=-1).indices
-    stats = {}
+    out = {}
     for name, ids in token_sets.items():
         idx = torch.tensor(list(ids), device=logits.device)
-        logprob = logits[:, idx].logsumexp(-1) - log_z
+        logprob = logits[..., idx].logsumexp(-1) - log_z
         hit = torch.isin(top, idx).any(-1).float()
-        stats[name] = SetStats(logprob=logprob.mean().item(), topk_hit=hit.mean().item())
-    return stats
+        out[name] = (logprob.cpu(), hit.cpu())
+    return out
+
+
+def lens_stats(
+    h: torch.Tensor, unembed: Unembed, token_sets: Mapping[str, Sequence[int]], topk: int
+) -> dict[str, SetStats]:
+    """h: [n_positions, d_model] residuals of one layer -> means over positions."""
+    return {
+        name: SetStats(logprob=lp.mean().item(), topk_hit=hit.mean().item())
+        for name, (lp, hit) in lens_per_position(h, unembed, token_sets, topk).items()
+    }
 
 
 @dataclass(frozen=True)
@@ -110,8 +121,9 @@ class CoTLens:
         h = norm(h.to(next(norm.parameters()).device))
         return head(h.to(next(head.parameters()).device))
 
-    def cot_positions(self, prompt: str, completion: str, seed: int) -> list[int] | None:
-        """Lens positions inside the CoT; None if the prompt doesn't retokenise as a prefix."""
+    def cot_span(self, prompt: str, completion: str) -> tuple[list[int], int, int] | None:
+        """(token ids of prompt + completion, CoT start, CoT end); None if the prompt doesn't
+        retokenise as a prefix (positions would be misaligned)."""
         prompt_ids = self.model.encode([prompt])["input_ids"][0].tolist()
         ids = self.model.encode([prompt + completion])["input_ids"][0].tolist()
         start = len(prompt_ids)
@@ -122,7 +134,28 @@ class CoTLens:
             if self.think_close_id in ids[start:]
             else len(ids)
         )
+        return ids, start, end
+
+    def cot_positions(self, prompt: str, completion: str, seed: int) -> list[int] | None:
+        """Lens positions inside the CoT; None if the prompt doesn't retokenise as a prefix."""
+        span = self.cot_span(prompt, completion)
+        if span is None:
+            return None
+        ids, start, end = span
         return lens_positions(ids, start, end, self.exclude_next, self.max_positions, seed)
+
+    def per_position(
+        self, texts: Sequence[str], positions: Sequence[int]
+    ) -> dict[str, torch.Tensor]:
+        """One batched forward over `texts` (left-padded, so negative `positions` hit the same
+        token of a shared suffix in every row) -> per set: log-probs [batch, layer, position]."""
+        acts = self.model.activations(texts, self.sites, positions=positions, batch_size=len(texts))
+        per_layer = [
+            lens_per_position(acts[s], self.unembed, self.token_sets, self.topk) for s in self.sites
+        ]
+        return {
+            name: torch.stack([pl[name][0] for pl in per_layer], dim=1) for name in self.token_sets
+        }
 
     def score(self, prompt: str, completion: str, seed: int) -> LensScore | None:
         positions = self.cot_positions(prompt, completion, seed)
