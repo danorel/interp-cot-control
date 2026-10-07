@@ -13,12 +13,16 @@ changes — in the text, and in the model's internal prediction of that word?
    ordinary positions). Banning a similar word ("sum" / "divisor") does not do this.
 3. **The effect does not fade**: it is the same in the first and last fifth of reasoning
    thousands of tokens long.
-4. **A monitoring threat changes neither the word rate nor the internal suppression, but makes
-   the CoT more open about the rule**: +13 percentage points of CoTs that state the rule, for
-   both words (95% CI +6 to +22).
+4. **A monitoring threat changes neither the word rate nor the internal suppression, but the
+   model states the rule more often**: 63 vs 47 of 120 CoTs ("total") and 39 vs 23 ("factor"),
+   +13 percentage points each (95% CI +6 to +22). A more salient prompt may explain this as
+   well as the monitor; not tested.
 
 At positions where the model naturally writes the word, the ban lowers its output probability
-from 82% to 20% ("total") and from 84% to 51% ("factor") on the same text.
+on the same text from 82% to 20% ("total") and from 84% to 51% ("factor"), as geometric means
+over positions. For "factor" this predicts the text-level drop; for "total" it would predict
+about −76%, but the observed drop is −46% (822 violations instead of ~450). This mismatch is
+unresolved; see the open questions in the README.
 
 ![Same text, two prompts: change in the model's prediction of "total" by layer](reports/figures/total/swap_contrasts.png)
 
