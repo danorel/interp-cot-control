@@ -88,15 +88,28 @@ def collect(run: Path) -> tuple[str, list[dict[str, Any]]]:
     return experiment, rows
 
 
-def draw(rows: Sequence[dict[str, Any]], per_stratum: int, seed: int) -> list[dict[str, Any]]:
+def draw(
+    rows: Sequence[dict[str, Any]], per_stratum: Mapping[str, int], seed: int
+) -> list[dict[str, Any]]:
+    """The first k rows of each stratum in a fixed shuffled order, so a larger sample always
+    contains a smaller one: labels survive if the sample is grown later."""
     out = []
     for st in STRATA:
         pool = [r for r in rows if r["stratum"] == st]
-        out += random.Random(f"{seed}-{st}").sample(pool, min(per_stratum, len(pool)))
+        random.Random(f"{seed}-{st}").shuffle(pool)
+        out += pool[: per_stratum.get(st, 0)]
     return out
 
 
-def cmd_sample(runs: Sequence[Path], out: Path, per_stratum: int, seed: int) -> None:
+def parse_sizes(spec: str) -> dict[str, int]:
+    """'A=15,B=15,C=10' -> {'A': 15, 'B': 15, 'C': 10}."""
+    sizes = {k: int(v) for k, v in (item.split("=") for item in spec.split(","))}
+    if unknown := set(sizes) - set(STRATA):
+        raise ValueError(f"unknown strata {sorted(unknown)}; expected {STRATA}")
+    return sizes
+
+
+def cmd_sample(runs: Sequence[Path], out: Path, per_stratum: Mapping[str, int], seed: int) -> None:
     sample, key, sizes = [], [], {}
     for run in runs:
         experiment, rows = collect(run)
@@ -208,7 +221,12 @@ def main(argv: Sequence[str] | None = None) -> None:
     s = sub.add_parser("sample")
     s.add_argument("--run", type=Path, action="append", required=True, help="generation run dir")
     s.add_argument("--out", type=Path, default=Path("reports/meta_validation"))
-    s.add_argument("--per-stratum", type=int, default=25, help="sentences per stratum per run")
+    s.add_argument(
+        "--per-stratum",
+        type=parse_sizes,
+        default="A=15,B=15,C=10",
+        help="sentences per stratum per run",
+    )
     s.add_argument("--seed", type=int, default=0)
     a = sub.add_parser("analyze")
     a.add_argument("folder", type=Path)

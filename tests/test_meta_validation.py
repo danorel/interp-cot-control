@@ -1,6 +1,13 @@
 import pytest
 
-from experiments.forbidden_word.meta_validation import analyze, estimate, stratum, wilson
+from experiments.forbidden_word.meta_validation import (
+    analyze,
+    draw,
+    estimate,
+    parse_sizes,
+    stratum,
+    wilson,
+)
 from experiments.forbidden_word.text import word_pattern
 
 TOTAL, SUM = word_pattern(["total"]), word_pattern(["sum"])
@@ -46,3 +53,11 @@ def test_analyze_joins_labels_and_skips_unsure():
 def test_wilson_interval_contains_estimate():
     lo, hi = wilson(9, 10)
     assert lo < 0.9 < hi and lo >= 0 and hi <= 1
+
+
+def test_draw_is_nested_so_labels_survive_a_larger_sample():
+    rows = [{"id": f"{st}{i}", "stratum": st} for st in "ABC" for i in range(40)]
+    small = draw(rows, parse_sizes("A=5,B=5,C=2"), seed=0)
+    large = draw(rows, parse_sizes("A=15,B=15,C=10"), seed=0)
+    assert {r["id"] for r in small} <= {r["id"] for r in large}
+    assert len(small) == 12 and len(large) == 40
