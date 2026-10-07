@@ -44,7 +44,7 @@ TEXT_METRICS: dict[str, Callable[[Record], float]] = {
 }
 
 # Text metrics also reported as paired (same-problem) contrasts.
-PAIRED_TEXT_METRICS = ("target_count", "target_per_1k_chars")
+PAIRED_TEXT_METRICS = ("target_count", "target_per_1k_chars", "meta_refusal")
 
 
 def mean_ci(x: Sequence[float], n_boot: int = 2000, seed: int = 0) -> dict[str, float]:
@@ -91,9 +91,13 @@ def summarize_text(groups: Groups) -> dict[str, Any]:
         }
         for cond, rs in groups.items()
     }
+
+    def as_float(metric: str) -> Callable[[Record], float]:
+        return lambda r: float(TEXT_METRICS[metric](r))  # binary metrics return bools
+
     paired = {
         metric: {
-            f"{a}-{b}": mean_ci(paired_diffs(groups, a, b, TEXT_METRICS[metric]).tolist())
+            f"{a}-{b}": mean_ci(paired_diffs(groups, a, b, as_float(metric)).tolist())
             for a, b in _contrasts(groups)
         }
         for metric in PAIRED_TEXT_METRICS

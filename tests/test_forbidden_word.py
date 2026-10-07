@@ -223,3 +223,16 @@ def test_mean_ci():
     r = mean_ci([1.0] * 10)
     assert r["mean"] == r["lo"] == r["hi"] == 1.0
     assert mean_ci([])["n"] == 0
+
+
+def test_paired_meta_refusal_is_a_rate_difference():
+    def rec(pid: str, cond: str, cot: str) -> Record:
+        return Record(
+            Sample(Problem(pid, "q", None, False), cond, "", ""),
+            score_text(f"<think>{cot}</think>", None, TOTAL, SUM),
+        )
+
+    meta, plain = 'I must not use the word "total".', "So 2 + 3 = 5."
+    s = summarize([rec("a", "forbid", plain), rec("a", "grader", meta),
+                   rec("b", "forbid", meta), rec("b", "grader", meta)])  # fmt: skip
+    assert s["text"]["paired"]["meta_refusal"]["grader-forbid"]["mean"] == 0.5
