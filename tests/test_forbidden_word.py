@@ -11,6 +11,7 @@ from experiments.forbidden_word.params import Params
 from experiments.forbidden_word.stats import group, mean_ci, paired_diffs, summarize
 from experiments.forbidden_word.text import (
     is_meta,
+    meta_spans,
     parse_gold,
     parse_pred,
     score_text,
@@ -63,6 +64,16 @@ def test_meta_positive(s):
 )
 def test_meta_negative(s):
     assert not is_meta(s, TOTAL)
+
+
+def test_meta_spans_point_at_meta_sentences_in_the_completion():
+    completion = (
+        '<think>\nThe total is 5. The problem says not to use the word "total".\n'
+        "So it is 5.</think>\nThe total is 5."
+    )
+    spans = meta_spans(completion, TOTAL, SUM)
+    assert [completion[a:b] for a, b in spans] == ['The problem says not to use the word "total".']
+    assert meta_spans("<think>no meta here</think>", TOTAL, SUM) == []
 
 
 def test_score_text_separates_meta_from_task_use():

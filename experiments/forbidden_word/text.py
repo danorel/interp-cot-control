@@ -97,6 +97,24 @@ def is_meta(sentence: str, word: re.Pattern[str]) -> bool:
     return bool(quoted or _FORBIDDEN_TERM.search(s) or refuses)
 
 
+def meta_spans(
+    completion: str, target: re.Pattern[str], other: re.Pattern[str]
+) -> list[tuple[int, int]]:
+    """Character spans [start, end) in `completion` of the CoT's meta sentences (same rule as
+    score_text), for mapping them onto tokens."""
+    thinking = split_cot(completion).thinking
+    base = completion.find(thinking)
+    if base < 0:
+        return []
+    spans, cursor = [], 0
+    for s in sentences(thinking):
+        at = thinking.find(s, cursor)
+        cursor = at + len(s)
+        if is_meta(s, target) or is_meta(s, other):
+            spans.append((base + at, base + at + len(s)))
+    return spans
+
+
 @dataclass(frozen=True)
 class WordUse:
     task: int  # occurrences in ordinary reasoning

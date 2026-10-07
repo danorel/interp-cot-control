@@ -16,6 +16,7 @@ from experiments.forbidden_word.swap import (
     position_bins,
     score_cot,
     summarize_swap,
+    tokens_in_spans,
 )
 
 CONFIG = Path(__file__).parents[1] / "experiments/forbidden_word/swap.yaml"
@@ -42,21 +43,49 @@ class CharLens:
         codes = torch.tensor([[[float(ord(t[p])) for p in positions]] for t in texts])
         return {"target": codes, "other": torch.zeros_like(codes), "substitute": -codes}
 
+    def token_starts(self, text: str) -> list[int]:
+        return list(range(len(text)))
+
 
 def _sample(cond: str, prompt: str, completion: str) -> Sample:
     return Sample(Problem("p", "q", None, False), cond, prompt, completion)
 
 
-def _score_cot(lens: Any, source: Sample, prompts: dict[str, str]) -> list[SwapScore] | None:
-    return score_cot(cast(CoTLens, lens), source, prompts, n_bins=2, max_class_positions=64, seed=0)
+def _score_cot(
+    lens: Any, source: Sample, prompts: dict[str, str], meta: list[tuple[int, int]] | None = None
+) -> list[SwapScore] | None:
+    return score_cot(
+        cast(CoTLens, lens), source, prompts, n_bins=2, max_class_positions=64, seed=0,
+        meta_spans=meta or [],
+    )  # fmt: skip
+
+
+def _chars(ids: list[int], classes: dict[str, list[int]]) -> dict[str, str]:
+    return {c: "".join(chr(ids[p]) for p in ps) for c, ps in classes.items()}
 
 
 def test_classify_positions_by_next_token():
     ids = [ord(c) for c in "aTbUcSd"]
     classes = classify_positions(ids, 0, len(ids), SETS)
-    chars = {c: "".join(chr(ids[p]) for p in ps) for c, ps in classes.items()}
     # a->T target, b->U substitute, c->S skipped (other word), last char has no next token.
-    assert chars == {"target": "a", "substitute": "b", "neutral": "TUS"}
+    assert _chars(ids, classes) == {"target": "a", "substitute": "b", "neutral": "TUS", "meta": ""}
+
+
+def test_meta_sentence_takes_precedence_over_target():
+    # Completion "aT.bT|": the span "bT" is a meta sentence quoting the word.
+    source = _sample("forbid", "P:", "aT.bT|x")
+    scores = _score_cot(CharLens(), source, {"forbid": "P:"}, meta=[(3, 5)])
+    assert scores is not None
+    classes = scores[0].classes
+    # a->T is a genuine use; '.' and 'b' precede tokens inside the meta sentence.
+    assert classes["target"].target_logprob == [ord("a")]
+    assert classes["meta"].n == 2
+    assert classes["meta"].target_logprob == [(ord(".") + ord("b")) / 2]
+    assert classes["neutral"].target_logprob == [ord("T")]
+
+
+def test_tokens_in_spans_uses_offsets_relative_to_completion():
+    assert tokens_in_spans([0, 2, 5, 7, 9], base=4, spans=[(1, 4)]) == {2, 3}
 
 
 def test_prompts_of_different_length_read_the_same_cot_tokens():

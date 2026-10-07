@@ -148,6 +148,13 @@ class CoTLens:
         )
         return ids, start, end
 
+    def token_starts(self, text: str) -> list[int]:
+        """Character offset in `text` where each token of encode([text]) starts."""
+        enc = self.model.tokenizer(text, add_special_tokens=False, return_offsets_mapping=True)
+        starts = [start for start, _ in enc["offset_mapping"]]
+        n = self.model.encode([text])["input_ids"].shape[1]
+        return [0] * (n - len(starts)) + starts  # a BOS added by encode() covers no characters
+
     def cot_positions(self, prompt: str, completion: str, seed: int) -> list[int] | None:
         """Lens positions inside the CoT; None if the prompt doesn't retokenise as a prefix."""
         span = self.cot_span(prompt, completion)

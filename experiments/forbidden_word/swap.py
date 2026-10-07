@@ -8,8 +8,11 @@ and addressed from the end of the text, so every prompt is measured at the same 
 P1 − P2 on the same CoT is the instruction's effect alone.
 
 Positions are split by the token that comes next in the CoT:
+    meta        a token inside a meta sentence ("the problem says not to use the word
+                'total'"): talking about the word, not using it; takes precedence
     neutral     neither the target, the other word, nor a substitute (the main measurement)
-    target      the target word: a violation in CoTs written under a prohibition
+    target      the target word outside meta sentences: a genuine violation in CoTs written
+                under a prohibition
     substitute  a word the model may use instead of the target ("sum", "overall", ...)
 
     uv run interp-run experiments/forbidden_word/swap.yaml
@@ -31,6 +34,7 @@ from experiments.forbidden_word.data import Sample, load_samples
 from experiments.forbidden_word.lens import CoTLens
 from experiments.forbidden_word.params import SwapParams
 from experiments.forbidden_word.stats import mean_ci
+from experiments.forbidden_word.text import meta_spans
 from interptemp.experiment import Experiment
 from interptemp.models.nnterp_model import NnterpModel
 
@@ -43,7 +47,7 @@ PROMPT_CONTRASTS: tuple[tuple[str, str], ...] = (
     ("forbid", "random"),
     ("grader", "forbid"),
 )
-POSITION_CLASSES = ("neutral", "target", "substitute")
+POSITION_CLASSES = ("neutral", "target", "substitute", "meta")
 
 Bins = list[list[float | None]]  # [layer][bin]; None = no sampled position in that bin
 
@@ -70,15 +74,30 @@ class SwapScore:
     classes: dict[str, ClassCurves]  # position class -> curves; absent if the CoT has none
 
 
+def tokens_in_spans(
+    token_starts: Sequence[int], base: int, spans: Sequence[tuple[int, int]]
+) -> set[int]:
+    """Indices of tokens whose first character (offset `base` = where the spans' text begins)
+    falls inside any [start, end) span."""
+    return {t for t, s in enumerate(token_starts) if any(a <= s - base < b for a, b in spans)}
+
+
 def classify_positions(
-    token_ids: Sequence[int], start: int, end: int, token_sets: Mapping[str, Sequence[int]]
+    token_ids: Sequence[int],
+    start: int,
+    end: int,
+    token_sets: Mapping[str, Sequence[int]],
+    meta_tokens: Iterable[int] = (),
 ) -> dict[str, list[int]]:
     """Positions p in [start, end - 1) by the class of token p + 1 (see module docstring)."""
     target, other, sub = (set(token_sets[k]) for k in ("target", "other", "substitute"))
+    meta = set(meta_tokens)
     classes: dict[str, list[int]] = {c: [] for c in POSITION_CLASSES}
     for p in range(start, end - 1):
         nxt = token_ids[p + 1]
-        if nxt in target:
+        if p + 1 in meta:
+            classes["meta"].append(p)
+        elif nxt in target:
             classes["target"].append(p)
         elif nxt in sub:
             classes["substitute"].append(p)
@@ -114,8 +133,12 @@ def score_cot(
     n_bins: int,
     max_class_positions: int,
     seed: int,
+    meta_spans: Sequence[tuple[int, int]] = (),
 ) -> list[SwapScore] | None:
-    """Re-read `source`'s completion under each prompt; None if positions can't be aligned."""
+    """Re-read `source`'s completion under each prompt; None if positions can't be aligned.
+
+    `meta_spans`: character spans of meta sentences within the completion.
+    """
     span = lens.cot_span(source.prompt, source.completion)
     if span is None:
         return None
@@ -127,11 +150,20 @@ def score_cot(
         if other is None or other[0][other[1] :] != ids[start:]:
             return None
 
-    found = classify_positions(ids, start, end, lens.token_sets)
+    meta_tokens: set[int] = set()
+    if meta_spans:
+        starts = lens.token_starts(source.prompt + source.completion)
+        if len(starts) != len(ids):
+            return None
+        meta_tokens = tokens_in_spans(starts, len(source.prompt), meta_spans)
+
+    found = classify_positions(ids, start, end, lens.token_sets, meta_tokens)
+    # Seeds per class stay fixed, so adding a class doesn't reshuffle the others.
     picked = {
-        "neutral": subsample(found["neutral"], lens.max_positions, seed),
-        "target": subsample(found["target"], max_class_positions, seed + 1),
-        "substitute": subsample(found["substitute"], max_class_positions, seed + 2),
+        c: subsample(
+            found[c], lens.max_positions if c == "neutral" else max_class_positions, seed + k
+        )
+        for k, c in enumerate(POSITION_CLASSES)
     }
     if not picked["neutral"]:
         return None
@@ -313,9 +345,11 @@ class PromptSwapExperiment(Experiment):
             prompts = {
                 p: samples[pid, p].prompt for p in params.prompt_conditions if (pid, p) in samples
             }
+            source = samples[pid, cot]
             seed = zlib.crc32(f"{pid}/{cot}".encode())
+            spans = meta_spans(source.completion, params.target.pattern, params.other.pattern)
             result = score_cot(
-                lens, samples[pid, cot], prompts, params.n_bins, params.max_class_positions, seed
+                lens, source, prompts, params.n_bins, params.max_class_positions, seed, spans
             )
             if result is None:
                 n_skipped += 1
