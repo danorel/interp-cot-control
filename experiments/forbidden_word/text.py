@@ -33,8 +33,9 @@ _INSTRUCTION_REF = re.compile(
 _MONITOR = re.compile(
     r"\b(?:grader|graded|grading|monitor\w*|penali[sz]\w*|flag(?:s|ged)?)\b", re.IGNORECASE
 )
-_BOXED = re.compile(r"\\boxed\{((?:[^{}]|\{[^{}]*\})*)\}")
 _NUMBER = re.compile(r"-?\d[\d,]*(?:\.\d+)?")
+# LaTeX that doesn't change an answer's value: spacing, sizing, dollars, degree signs.
+_LATEX_NOISE = re.compile(r"\\left|\\right|\\[!,;: ]|\$|\s+|\^\{?\\circ\}?|\\%|%")
 _SMART_QUOTES = str.maketrans({"’": "'", "‘": "'", "“": '"', "”": '"'})
 
 
@@ -56,23 +57,69 @@ def split_cot(completion: str) -> CoT:
     return CoT(thinking=thinking.strip(), answer=answer.strip(), truncated=False)
 
 
+def last_boxed(text: str) -> str | None:
+    """Content of the last \\boxed{...} (nested braces allowed); None if absent or unclosed."""
+    at = text.rfind("\\boxed{")
+    if at < 0:
+        return None
+    start = at + len("\\boxed{")
+    depth = 1
+    for i in range(start, len(text)):
+        depth += {"{": 1, "}": -1}.get(text[i], 0)
+        if depth == 0:
+            return text[start:i]
+    return None
+
+
 def _last_number(text: str) -> float | None:
     numbers = _NUMBER.findall(text.replace("$", ""))
     return float(numbers[-1].replace(",", "")) if numbers else None
 
 
-def parse_pred(answer: str) -> float | None:
-    """Last \\boxed{...} of the post-CoT answer, else its last number."""
-    boxed = _BOXED.findall(answer)
-    return _last_number(boxed[-1] if boxed else answer)
+def normalize_answer(answer: str) -> str:
+    """Canonical string form of a LaTeX answer, for exact comparison."""
+    s = answer.replace("\\dfrac", "\\frac").replace("\\tfrac", "\\frac").replace("{,}", "")
+    s = re.sub(r"\\text\{([^{}]*)\}", r"\1", s)
+    s = _LATEX_NOISE.sub("", s)
+    s = re.sub(r"(?<=\d),(?=\d{3})", "", s)  # thousands separators
+    return s.rstrip(".").lower()
 
 
-def parse_gold(gsm8k_solution: str) -> float | None:
-    return _last_number(gsm8k_solution.split("####")[-1])
+def _as_number(answer: str) -> float | None:
+    s = normalize_answer(answer)
+    return float(s) if re.fullmatch(r"-?\d+(?:\.\d+)?", s) else None
 
 
-def answers_match(pred: float | None, gold: float | None) -> bool:
-    return pred is not None and gold is not None and abs(pred - gold) < 1e-6
+def parse_pred(answer: str) -> str | None:
+    """Last \\boxed{...} of the post-CoT answer, else its last number. An unclosed box (cut
+    off by max_new_tokens) is no answer, not a number fished out of it."""
+    boxed = last_boxed(answer)
+    if boxed is not None:
+        return boxed
+    if "\\boxed{" in answer:
+        return None
+    numbers = _NUMBER.findall(answer.replace("$", ""))
+    return numbers[-1] if numbers else None
+
+
+def parse_gold(solution: str, style: str = "gsm8k") -> str | None:
+    """Reference answer: after '####' (GSM8K) or the last \\boxed{} (MATH)."""
+    if style == "gsm8k":
+        return solution.split("####")[-1].strip().replace(",", "") or None
+    if style == "boxed":
+        return last_boxed(solution)
+    raise ValueError(f"unknown answer style {style!r}")
+
+
+def answers_match(pred: str | float | None, gold: str | float | None) -> bool:
+    """Numeric gold: compare values (pred's last number). Otherwise: normalised LaTeX."""
+    if pred is None or gold is None:
+        return False
+    gold_num = _as_number(str(gold))
+    if gold_num is not None:
+        pred_num = _last_number(normalize_answer(str(pred)))
+        return pred_num is not None and abs(pred_num - gold_num) < 1e-6
+    return normalize_answer(str(pred)) == normalize_answer(str(gold))
 
 
 # ---- word usage ----------------------------------------------------------------------------
@@ -138,12 +185,12 @@ class TextScore:
     monitor_mentions: int
     truncated: bool
     cot_chars: int
-    pred: float | None
+    pred: str | None
     correct: bool
 
 
 def score_text(
-    completion: str, gold: float | None, target: re.Pattern[str], other: re.Pattern[str]
+    completion: str, gold: str | float | None, target: re.Pattern[str], other: re.Pattern[str]
 ) -> TextScore:
     cot = split_cot(completion)
     sents = sentences(cot.thinking)

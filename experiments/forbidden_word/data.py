@@ -18,7 +18,7 @@ from interptemp.store import read_jsonl
 class Problem:
     id: str
     question: str
-    gold: float | None
+    gold: str | float | None  # reference answer (float in runs made before MATH support)
     word_in_question: bool  # the prompt itself primes the word; stratify on this later
 
 
@@ -57,19 +57,23 @@ class Record:
 
 
 def load_problems(spec: DatasetSpec, word: re.Pattern[str], n: int, seed: int) -> list[Problem]:
-    """GSM8K problems whose reference solution uses the word, i.e. it arises naturally."""
+    """Problems whose reference solution uses the word, i.e. it arises naturally."""
     from datasets import load_dataset
 
-    rows = load_dataset(spec.path, spec.name, split=spec.split).to_list()
+    names = spec.name if isinstance(spec.name, list) else [spec.name]
+    rows = [r for name in names for r in load_dataset(spec.path, name, split=spec.split).to_list()]
+    if spec.levels is not None:
+        rows = [r for r in rows if r.get("level") in spec.levels]
+    q, sol = spec.question_field, spec.solution_field
     pool = [
         Problem(
             id=f"{spec.path}:{i}",
-            question=r["question"],
-            gold=parse_gold(r["answer"]),
-            word_in_question=bool(word.search(r["question"])),
+            question=r[q],
+            gold=parse_gold(r[sol], spec.answer_style),
+            word_in_question=bool(word.search(r[q])),
         )
         for i, r in enumerate(rows)
-        if word.search(r["answer"])
+        if word.search(r[sol])
     ]
     random.Random(seed).shuffle(pool)
     return pool[:n]

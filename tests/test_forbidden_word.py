@@ -7,9 +7,10 @@ import yaml
 
 from experiments.forbidden_word.data import Problem, Record, Sample
 from experiments.forbidden_word.lens import LensScore, lens_positions, lens_stats
-from experiments.forbidden_word.params import Params
+from experiments.forbidden_word.params import Params, SwapParams
 from experiments.forbidden_word.stats import group, mean_ci, paired_diffs, summarize
 from experiments.forbidden_word.text import (
+    answers_match,
     is_meta,
     meta_spans,
     parse_gold,
@@ -19,7 +20,7 @@ from experiments.forbidden_word.text import (
     word_pattern,
 )
 
-CONFIG = Path(__file__).parents[1] / "experiments/forbidden_word/config.yaml"
+CONFIG = Path(__file__).parents[1] / "experiments/forbidden_word/config_total.yaml"
 TOTAL = word_pattern(["total", "totals", "totaling"])
 SUM = word_pattern(["sum", "sums"])
 
@@ -87,11 +88,26 @@ def test_score_text_separates_meta_from_task_use():
     assert s.correct and not s.truncated
 
 
-def test_parse_answers():
-    assert parse_pred("so \\boxed{1,234} and \\boxed{\\$72}") == 72
-    assert parse_pred("The answer is 18.") == 18
+def test_parse_answers_gsm8k():
+    assert parse_pred("so \\boxed{1,234} and \\boxed{\\$72}") == "\\$72"
+    assert parse_pred("The answer is 18.") == "18"
     assert parse_pred("") is None
-    assert parse_gold("blah <<4*3=12>>12\n#### 1,200") == 1200
+    assert parse_gold("blah <<4*3=12>>12\n#### 1,200") == "1200"
+    assert answers_match("\\$72", "72") and answers_match("1,200", "1200")
+    assert answers_match("18", 18.0)  # golds stored as floats by older runs
+    assert not answers_match("17", "18") and not answers_match(None, "18")
+
+
+def test_parse_answers_math():
+    solution = "So the answer is $\\boxed{\\frac{\\sqrt{3}}{2}}$."
+    assert parse_gold(solution, "boxed") == "\\frac{\\sqrt{3}}{2}"
+    assert parse_pred("Thus \\boxed{\\dfrac{\\sqrt{3}}{2}}") == "\\dfrac{\\sqrt{3}}{2}"
+    assert answers_match("\\dfrac{\\sqrt{3}}{2}", "\\frac{\\sqrt{3}}{2}")
+    assert answers_match("10,000", "10{,}000")
+    assert answers_match("x = 5", "5")  # numeric gold: compare values
+    assert answers_match("90^\\circ", "90")
+    assert not answers_match("\\frac{1}{2}", "\\frac{1}{3}")
+    assert parse_pred("cut off \\boxed{\\frac{1}{2") is None  # unclosed box (truncated)
 
 
 # ---- params / data -------------------------------------------------------------------------
@@ -104,6 +120,21 @@ def test_config_params_validate_and_build_prompts():
     forbid = params.user_message("Q?", "forbid")
     assert forbid.startswith("Q?\n\n") and '"total"' in forbid
     assert '"sum"' in params.user_message("Q?", "random")
+
+
+def test_factor_configs_validate():
+    exp_dir = CONFIG.parent
+    params = Params.model_validate(
+        yaml.safe_load((exp_dir / "config_factor.yaml").read_text())["params"]
+    )
+    assert params.dataset.answer_style == "boxed" and params.lens.single_token_words
+    assert '"factor"' in params.user_message("Q?", "forbid")
+    pattern = params.target.pattern
+    assert pattern.search("we factored it") and not pattern.search("5 factorial")
+    swap = SwapParams.model_validate(
+        yaml.safe_load((exp_dir / "swap_factor.yaml").read_text())["params"]
+    )
+    assert swap.target.forms == params.target.forms and swap.other.forms == params.other.forms
 
 
 def test_sample_roundtrip():

@@ -109,14 +109,16 @@ class CoTLens:
         max_positions: int | None,
         topk: int,
         extra_forms: Mapping[str, Sequence[str]] | None = None,
+        single_token_words: bool = False,
     ):
         """`extra_forms`: further named word sets to read off the lens (single-token variants
-        only); they don't change which positions the main experiment excludes."""
+        only); they don't change which positions the main experiment excludes.
+        `single_token_words`: the same restriction for the target and other word."""
         self.model = model
         tok = model.tokenizer
         self.token_sets = {
-            "target": variant_token_ids(tok, target_forms),
-            "other": variant_token_ids(tok, other_forms),
+            "target": variant_token_ids(tok, target_forms, single_token_words),
+            "other": variant_token_ids(tok, other_forms, single_token_words),
         }
         self.exclude_next = {i for ids in self.token_sets.values() for i in ids}
         for name, forms in (extra_forms or {}).items():

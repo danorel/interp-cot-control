@@ -332,6 +332,7 @@ class PromptSwapExperiment(Experiment):
             max_positions=params.lens.max_positions,
             topk=params.lens.topk,
             extra_forms={"substitute": params.substitutes},
+            single_token_words=params.lens.single_token_words,
         )
         self.log.info(
             "substitute tokens: "

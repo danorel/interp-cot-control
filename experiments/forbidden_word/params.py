@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -24,9 +25,15 @@ class WordSpec(_Strict):
 
 
 class DatasetSpec(_Strict):
+    """A HF dataset; defaults match GSM8K."""
+
     path: str
-    name: str | None = None
+    name: str | list[str] | None = None  # several configs are concatenated (MATH subjects)
     split: str = "test"
+    question_field: str = "question"
+    solution_field: str = "answer"
+    answer_style: Literal["gsm8k", "boxed"] = "gsm8k"  # where the reference answer sits
+    levels: list[str] | None = None  # keep only rows whose `level` is listed (MATH)
 
 
 class LensParams(_Strict):
@@ -34,6 +41,9 @@ class LensParams(_Strict):
     layers: list[int] | None = None  # None = every layer
     max_positions: int | None = 128
     topk: int = 10
+    # Read off only word variants that are one token. A split form's first token can be a
+    # generic prefix ("factored" -> " fact" would also match "in fact").
+    single_token_words: bool = False
 
 
 class Params(_Strict):

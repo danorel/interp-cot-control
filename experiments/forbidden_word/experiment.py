@@ -114,6 +114,7 @@ class ForbiddenWordExperiment(Experiment):
             layers=params.lens.layers,
             max_positions=params.lens.max_positions,
             topk=params.lens.topk,
+            single_token_words=params.lens.single_token_words,
         )
         scored = []
         for r in tqdm(records, desc="lens", mininterval=PROGRESS_INTERVAL_S):
