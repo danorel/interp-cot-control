@@ -62,7 +62,7 @@ def lens_stats(
     top = logits.topk(topk, dim=-1).indices
     stats = {}
     for name, ids in token_sets.items():
-        idx = torch.tensor(list(ids))
+        idx = torch.tensor(list(ids), device=logits.device)
         logprob = logits[:, idx].logsumexp(-1) - log_z
         hit = torch.isin(top, idx).any(-1).float()
         stats[name] = SetStats(logprob=logprob.mean().item(), topk_hit=hit.mean().item())
@@ -105,7 +105,10 @@ class CoTLens:
 
     def unembed(self, h: torch.Tensor) -> torch.Tensor:
         raw = self.model.model  # nnterp StandardizedTransformer; modules outside a trace
-        return raw.lm_head._module(raw.ln_final._module(h))
+        norm, head = raw.ln_final._module, raw.lm_head._module
+        # activations() returns CPU tensors; the unembedding lives on the model's device(s).
+        h = norm(h.to(next(norm.parameters()).device))
+        return head(h.to(next(head.parameters()).device))
 
     def cot_positions(self, prompt: str, completion: str, seed: int) -> list[int] | None:
         """Lens positions inside the CoT; None if the prompt doesn't retokenise as a prefix."""
