@@ -6,13 +6,17 @@ writes?
 
 **Status: concluded (2026-10-07).**
 
-**Answer (Qwen3-8B, two words).** Only from the text, and only partly. The model
-writes the forbidden word 40–50% less often, but inside the network the first two thirds or
-more of the layers prepare it exactly as if there were no ban. The ban acts as a late,
-word-specific filter: ~2× suppression from layer ~24 for "total" (GSM8K), ~1.4× from layer ~29
-for "factor" (MATH). Where the filter does not intensify, the model breaks the rule. For
-"total", which has a true synonym, the word also stays a strong hidden candidate where the
-model writes "sum" instead.
+**Answer (Qwen3-8B, two words).** In the text, the ban halves the word and rarely removes it
+("total" −46%, "factor" −40%). Inside the model the effect has a specific shape. Reading the same
+CoT with and without the ban, the logit lens sees no change in the model's prediction of the
+word until late in the network, then a word-specific suppression: from layer ~24 for "total"
+(~2×), from layer ~29 for "factor" (~1.4×). It does not fade over thousands of tokens of
+reasoning. A monitoring threat changes neither the word rate nor this suppression, but makes
+the CoT more open about the rule (+13 percentage points of CoTs stating it, for both words).
+What the lens cannot tell is whether the instruction is already represented earlier in other
+directions, or whether the late layers cause the suppression.
+
+One-page summary with random examples: [ONEPAGER.md](ONEPAGER.md).
 
 ## How the study works
 
@@ -67,7 +71,8 @@ the model had to name the next word now, how likely would it be the forbidden wo
 a curve per layer of how present the word is in the model's computation.
 
 We only look at positions where the model did **not** write the word next — otherwise the lens
-would just reflect the text — so the curve measures what the model prepares, not what it says.
+would just reflect the text — so the curve tracks the model's latent prediction of the word
+where it does not say it.
 
 ### Same text, different instruction (prompt swap)
 
@@ -127,6 +132,9 @@ by about half; banning `sum` leaves it unchanged; the monitoring threat adds not
 - **Aware but non-compliant.** 39–53% of banned CoTs state the rule and often keep using the word.
 - **Substitution.** `sum` becomes 2–3× more frequent under the ban.
 - **No accuracy cost**, and the grader is almost never mentioned.
+- **The monitoring threat makes the CoT more open about the rule, not more hidden.** It does
+  not change the word rate (`grader − forbid` −0.12 per 1k chars, CI includes 0) but raises the
+  share of CoTs that state the rule by 13 percentage points (paired, 95% CI +6 to +22).
 
 ### Inside the model: a late, word-specific filter
 
@@ -135,8 +143,9 @@ by about half; banning `sum` leaves it unchanged; the monitoring threat adds not
 *What it shows:* for CoTs written under the ban, how much likelier the model is to say `total`
 next under one prompt than another, reading the identical text. *How to read:* a line at "no
 change" means that instruction does nothing at that layer; below it, the word is suppressed.
-*Takeaway:* up to layer ~23 every line is flat, so the model prepares `total` as if there were
-no ban. From layer ~24 the ban suppresses it, peaking at layers 29–32 (about 2× less likely than
+*Takeaway:* up to layer ~23 every line is flat: the lens sees no change in the model's
+prediction of `total` (the instruction may still be represented there in directions the lens
+cannot read). From layer ~24 the ban suppresses it, peaking at layers 29–32 (about 2× less likely than
 under `control`, 2–2.5× less than under a ban on `sum`). A ban on `sum` slightly *raises*
 `total` there, the internal mirror of `sum` replacing `total` in the text; the monitoring
 threat changes almost nothing. CoTs written under the other conditions give the same picture.
@@ -176,9 +185,14 @@ comes next. *How to read:* blue — CoTs written without a ban, where the model 
 *Takeaway:* where the model would naturally say the word, the ban hits hard (4–7× less likely at
 layers 29–32). At violations it acts only at the background level of ordinary positions and
 fades away by the output. The pull toward `total` in the middle layers is also somewhat
-stronger at violations (≈2× at layer 18). So violations look like a slightly stronger pull
-meeting a filter that does not intensify. Caveat: violations are selected by outcome (the model
+stronger at violations (≈2× at layer 18). Violations thus co-occur with a slightly stronger pull
+and a suppression that does not intensify; whether either causes them is not tested. Caveat: violations are selected by outcome (the model
 did write the word), which biases the contrast near the output toward zero.
+
+**At the output (layer 35), where the model naturally writes `total`**, the ban lowers its
+probability from 82% to 20% on the same text (×0.24, 95% CI 0.17–0.32; geometric mean over
+119 CoTs, 1,819 positions). At violations it is unchanged (×0.97). Layer 35 is left out of
+the figures only because at ordinary positions it is dominated by the tail of the distribution.
 
 ![Substitutes](reports/figures/total/substitutes.png)
 
@@ -253,7 +267,8 @@ Paired per-problem differences in `factor` per 1k chars: `forbid − control` �
   on the similar word does not, the grader adds nothing, accuracy is unaffected.
 - **Not harder to comply with, contrary to our expectation.** Fully clean CoTs are more common
   (24% vs 7%), partly because 15% of `baseline` CoTs never use `factor`.
-- **Fewer meta sentences** (19–33% vs 39–53%), and **the similar word is used as a substitute**
+- **Fewer meta sentences** (19–33% vs 39–53%); as for `total`, the grader adds 13 percentage
+  points of CoTs stating the rule (95% CI +6 to +22) without changing the word rate; and **the similar word is used as a substitute**
   (`divisor` ~4× more frequent under the ban), like `sum` for `total`.
 - Banned CoTs are only ~13% shorter (~30% for `total`).
 
@@ -278,7 +293,9 @@ threat again changes almost nothing.
 *Takeaway:* replicates `total`. Where the model naturally writes `factor`, the ban suppresses
 it 1.6–1.8× at layers 29–32; at violations the suppression is weaker (≈1.4× at layer 29) and
 fades to nothing by layer 34. The pull toward `factor` in the middle layers is again somewhat
-stronger at violations (1.6–1.8× at layers 12–21).
+stronger at violations (1.6–1.8× at layers 12–21). At the output, where the model naturally
+writes `factor`, the ban lowers its probability from 84% to 51% (×0.61, 95% CI 0.51–0.71);
+at violations it barely changes (×0.93).
 
 ![Substitutes, factor](reports/figures/factor/substitutes.png)
 
@@ -306,7 +323,9 @@ is even up to ~1.7× less likely around layer 20); the strong late suppression i
 | hidden candidate before substitutes | 14–90× above natural use, P ≈ 1–2% | 5–17× above natural use, P ≈ 0.003% |
 | meta sentences: mid-layer boost | up to 2.2× | none |
 | banning the similar word raises the target late | yes, 1.1–1.35× | no |
-| monitoring threat | ≈ nothing | ≈ nothing |
+| output (layer 35) where the word comes naturally: ban vs control | 82% → 20% (×0.24) | 84% → 51% (×0.61) |
+| monitoring threat: word rate and internals | ≈ nothing | ≈ nothing |
+| monitoring threat: CoTs stating the rule | +13 pp | +13 pp |
 
 ## Validation of the meta-sentence detector
 
@@ -338,21 +357,30 @@ substantial number of missed meta sentences in the corpus. Labelling more of B
 
 Holds for both words:
 
-1. **The word does not disappear from the computation.** The first two thirds or more of the
-   network (layers 0–23 for `total`, 0–28 for `factor`) prepare the forbidden word exactly as
-   without the ban.
-2. **The ban acts as a late, word-specific filter** that stays active throughout the reasoning.
-3. **Violations** occur where the pull toward the word is a little stronger and the filter does
-   not intensify.
-4. **A monitoring threat changes neither the text nor the internals.**
+1. **The ban halves the word in the text and rarely removes it** (5–25% of CoTs fully clean).
+2. **Inside, the visible effect is late and word-specific.** On the same text, the lens sees no
+   change in the model's prediction of the word in layers 0–23 (`total`) / 0–28 (`factor`),
+   then suppression that a ban on a similar word does not produce. The lens reads only the
+   word's direction, so this does not show that earlier layers ignore the instruction.
+3. **The suppression is steady across the reasoning**, from the first to the last fifth.
+4. **At the output, where the model would naturally write the word**, the ban lowers its
+   probability on the same text: 82% → 20% (`total`), 84% → 51% (`factor`).
+5. **Violations co-occur** with a somewhat stronger mid-layer pull toward the word and a late
+   suppression that does not intensify; violations are selected by outcome, so this is not a
+   causal account.
+6. **A monitoring threat changes neither the word rate nor the internals, but makes the CoT
+   more open about the rule**: +13 percentage points of CoTs stating it (95% CI +6 to +22) for
+   both words.
 
 Depends on the word:
 
-5. **Strength and depth of the filter**: ~2× from layer ~24 for `total`, ~1.4× from layer ~29
-   for `factor`, although the text-level reduction is similar (−46% vs −40%).
-6. **Hidden candidate behind substitutes**: strong when a true synonym exists (`total` →
+7. **Strength and depth of the suppression**: ~2× from layer ~24 for `total`, ~1.4× from layer
+   ~29 for `factor`. The per-position output effect also differs (×0.24 vs ×0.61), yet the
+   text-level reduction is similar (−46% vs −40%): the model writes different text under the
+   ban, so the per-position strength does not translate directly into the overall rate.
+8. **Hidden candidate behind substitutes**: strong when a true synonym exists (`total` →
    `sum`), negligible when the alternatives are not synonyms (`factor` → `product`).
-7. **Boost while talking about the rule**: seen for `total` only.
+9. **Boost while talking about the rule**: seen for `total` only.
 
 All of this is correlational, on one model (Qwen3-8B), and the lens tracks "the next token is
 the word", not the concept.
@@ -361,14 +389,19 @@ the word", not the concept.
 
 The project answers its question for Qwen3-8B and two words; these would strengthen or extend it:
 
-1. **Causal test**: patch layers 29–34 from the control-prompt run into the ban run on the same
+1. **Is the instruction represented before layer ~24?** Decompose resid(forbid) − resid(random)
+   on the same text by layer into the component along the word's unembedding (after the final
+   norm) and the rest, with resid(random) − resid(control) as the baseline for any change of
+   instruction; or probe which word is banned from mid-layer activations. Decides whether
+   "no change up to layer ~23" is about the word's prediction only or about the computation.
+2. **Causal test**: patch layers 29–34 from the control-prompt run into the ban run on the same
    text; if the word comes back, the filter lives there (the lens only shows where it is visible).
-2. **Outcome-independent violation test**: on `control` CoTs, predict from the layer-24–28 state
+3. **Outcome-independent violation test**: on `control` CoTs, predict from the layer-24–28 state
    where the ban would still leave the word likely at the output.
-3. **A concept-level metric**: a linear probe for "the word comes next" at substitute positions,
+4. **A concept-level metric**: a linear probe for "the word comes next" at substitute positions,
    or a tuned lens, instead of the logit lens's next-token view.
-4. **A newer dense model** (e.g. Qwen3.6/3.8-27B, if nnterp supports it) or a different family.
-5. **Hiding information rather than a word**: ask the model to keep a key intermediate result
+5. **A newer dense model** (e.g. Qwen3.6/3.8-27B, if nnterp supports it) or a different family.
+6. **Hiding information rather than a word**: ask the model to keep a key intermediate result
    out of its CoT, or to replace it with a wrong one, and test whether the true value remains
    readable in the activations — a closer proxy for the CoT-monitoring threat model, reusing the
    prompt-swap and lens tooling here.
@@ -487,7 +520,9 @@ experiments/forbidden_word/
   summarize.py    recompute summary.json from rows.jsonl (no model)
   report.py       README figures from finished runs (matplotlib, dev dependency)
   meta_validation.py  blind hand-label check of the meta-sentence detector
+  examples.py     random CoT excerpts (meta sentences, uses of the word) for the one-pager
 reports/figures/<word>/  the figures embedded in this README
+ONEPAGER.md       one-page summary: claim, key plot, controls, limitations, random examples
 reports/meta_validation/ the labelled sample, hidden key, labels and results of that check
 experiments/sanity/  checks to run on every new model/pod before experiments (`make sanity`)
 src/interptemp/   generic infrastructure: model backends (nnterp, vLLM), Site, run dirs,
@@ -502,9 +537,12 @@ tests/            unit tests; `make test-model` runs integration tests on Qwen3-
 
 - **Correlational.** The lens shows where the effect is visible, not where it is caused (see
   the causal test under open questions), and it tracks "the next token is the word", not the concept.
-- **Layer 35 (the output distribution) is not interpreted**: there log P of a rare token is
-  dominated by the tail and swings with the CoT source (e.g. −2.6 on banned CoTs, +0.8 on
-  control CoTs for `total`).
+- **Layer 35 (the output distribution) is left out of the figures**: at ordinary positions log P
+  of a rare token there is dominated by the tail and swings with the CoT source (e.g. −2.6 on
+  banned CoTs, +0.8 on control CoTs for `total`). Where the word comes next naturally it is not
+  a tail value, and it is reported in the text as the behavioural effect of the ban.
+- **The logit lens reads only the word's direction.** "No change in layers 0–23" is about the
+  model's prediction of the word; the instruction may be represented there in other directions.
 - **Logit lens uses the model's own final norm + unembedding** (no tuned lens); early layers are
   not directly interpretable — compare conditions at the same layer, not across layers.
 - **Same-text pairing removes almost all noise**, so even tiny shifts have CIs excluding zero;
