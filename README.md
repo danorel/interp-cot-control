@@ -4,12 +4,13 @@
 word disappear from its internal computation (the residual stream), or only from the text it
 writes?
 
-**Short answer so far (Qwen3-8B, "total" on GSM8K).** Only from the text, and only partly. The
-model writes the word about half as often, but inside the network the first ~2/3 of the layers
-prepare it exactly as if there were no ban. The ban acts as a late, word-specific filter in
-layers ~24–34. Where that filter works, the model writes a substitute while the forbidden word
-stays a strong hidden candidate; where it doesn't, the model breaks the rule. A second word
-("factor" on MATH) reproduces the text-level effect; its internal analysis is in progress.
+**Short answer so far (Qwen3-8B, two words).** Only from the text, and only partly. The model
+writes the forbidden word 40–50% less often, but inside the network the first two thirds or
+more of the layers prepare it exactly as if there were no ban. The ban acts as a late,
+word-specific filter: ~2× suppression from layer ~24 for "total" (GSM8K), ~1.4× from layer ~29
+for "factor" (MATH). Where the filter does not intensify, the model breaks the rule. For
+"total", which has a true synonym, the word also stays a strong hidden candidate where the
+model writes "sum" instead.
 
 ## How the study works
 
@@ -38,7 +39,7 @@ We ran this twice, with words of different kinds:
 | kind of word | everyday, with easy synonyms | technical term, hard to replace |
 | dataset | GSM8K (grade-school word problems) | MATH (competition maths), levels 1–3 |
 | problems | 120 whose reference solution uses `total` | 120 whose reference solution uses `factor` |
-| status | text + internals done | text done, internals running |
+| status | text + internals done | text + internals done |
 
 ### What we measure in the text
 
@@ -251,34 +252,89 @@ Paired per-problem differences in `factor` per 1k chars: `forbid − control` �
   (`divisor` ~4× more frequent under the ban), like `sum` for `total`.
 - Banned CoTs are only ~13% shorter (~30% for `total`).
 
-The prompt swap for `factor` is running; its figures will go to `reports/figures/factor/`.
+### Inside the model: the same late filter, weaker and later
+
+Prompt swap `outputs/forbidden_word_factor_swap/20261007-161658`, 480 CoTs, 0 skipped.
+
+![Same-text contrasts by layer, factor](reports/figures/factor/swap_contrasts.png)
+
+*What it shows:* the same comparison as for `total`, on CoTs written under the ban on `factor`.
+*Takeaway:* layers 0–28 are untouched (within ±5%), then the ban suppresses `factor` from layer
+29 on, about 1.4× less likely than under `control` and 1.3–1.4× less than under a ban on
+`divisor`. Banning `divisor` does not raise `factor` (no mirror effect), and the monitoring
+threat again changes almost nothing.
+
+<img src="reports/figures/factor/position_heatmap.png" alt="Late suppression of factor by layer and position in the CoT" width="540">
+
+*Takeaway:* as for `total`, the late suppression is present throughout the reasoning.
+
+![Violations vs natural uses, factor](reports/figures/factor/violations.png)
+
+*Takeaway:* replicates `total`. Where the model naturally writes `factor`, the ban suppresses
+it 1.6–1.8× at layers 29–32; at violations the suppression is weaker (≈1.4× at layer 29) and
+fades to nothing by layer 34. The pull toward `factor` in the middle layers is again somewhat
+stronger at violations (1.6–1.8× at layers 12–21).
+
+![Substitutes, factor](reports/figures/factor/substitutes.png)
+
+*Takeaway:* weaker than for `total`. Before `divisor` / `product` / `multiple` written under the
+ban, `factor` is 5–17× likelier at layers 24–29 than before the same words used naturally, but
+its absolute probability stays tiny (≈0.003% at layer 24, vs ≈2% for `total`). These words are
+alternatives in the reasoning rather than synonyms, so `factor` is not a strong hidden
+candidate there.
+
+![Meta sentences, factor](reports/figures/factor/meta.png)
+
+*Takeaway:* differs from `total`. Inside meta sentences there is no mid-network boost (`factor`
+is even up to ~1.7× less likely around layer 20); the strong late suppression is the same.
+
+### Two words side by side
+
+| finding | `total` (GSM8K) | `factor` (MATH) |
+|---|---|---|
+| text: ban vs control (per 1k chars) | −46% | −40% |
+| layers untouched by the ban | 0–23 | 0–28 |
+| late filter, ordinary positions (ban vs control) | ~2× less likely, layers 29–32 | ~1.4× less likely, layers 30–34 |
+| word-specific part (ban vs ban on the similar word) | 2–2.5× | 1.3–1.4× |
+| suppression at natural uses vs at violations | 4–7× vs ~1.8×, fading | 1.6–1.8× vs ~1.4×, fading |
+| mid-layer pull at violations vs natural uses | ~2× stronger | 1.6–1.8× stronger |
+| hidden candidate before substitutes | 14–90× above natural use, P ≈ 1–2% | 5–17× above natural use, P ≈ 0.003% |
+| meta sentences: mid-layer boost | up to 2.2× | none |
+| banning the similar word raises the target late | yes, 1.1–1.35× | no |
+| monitoring threat | ≈ nothing | ≈ nothing |
 
 ## What we conclude so far
 
-1. **The word does not disappear from the computation.** In ordinary reasoning the first ~2/3
-   of the network prepares the forbidden word exactly as without the ban.
-2. **The ban is a late, word-specific filter** (layers ~24–34 in Qwen3-8B), strongest where the
-   word is most likely, and active throughout the reasoning.
-3. **Substitutes hide the word**: where the model writes a synonym, the forbidden word stays a
-   strong hidden candidate until the filter removes it.
-4. **Violations** occur where the pull toward the word is a little stronger and the filter does
-   not intensify.
-5. **Talking about the rule boosts the word** in the middle of the network.
-6. **A monitoring threat changes neither the text nor the internals.**
+Holds for both words:
 
-All of this is correlational, from one model; points 1–6 are for `total`, and experiment 2 tests
-whether they hold for a different kind of word.
+1. **The word does not disappear from the computation.** The first two thirds or more of the
+   network (layers 0–23 for `total`, 0–28 for `factor`) prepare the forbidden word exactly as
+   without the ban.
+2. **The ban acts as a late, word-specific filter** that stays active throughout the reasoning.
+3. **Violations** occur where the pull toward the word is a little stronger and the filter does
+   not intensify.
+4. **A monitoring threat changes neither the text nor the internals.**
+
+Depends on the word:
+
+5. **Strength and depth of the filter**: ~2× from layer ~24 for `total`, ~1.4× from layer ~29
+   for `factor`, although the text-level reduction is similar (−46% vs −40%).
+6. **Hidden candidate behind substitutes**: strong when a true synonym exists (`total` →
+   `sum`), negligible when the alternatives are not synonyms (`factor` → `product`).
+7. **Boost while talking about the rule**: seen for `total` only.
+
+All of this is correlational, on one model (Qwen3-8B), and the lens tracks "the next token is
+the word", not the concept.
 
 ## Next steps
 
-1. Prompt swap for `factor` (running) and the same figures for it.
-2. **Outcome-independent violation test**: on `control` CoTs, predict from the layer-24–28 state
+1. **Outcome-independent violation test**: on `control` CoTs, predict from the layer-24–28 state
    where the ban would still leave the word likely at the output.
-3. **Causal test**: patch layers 29–34 from the control-prompt run into the ban run on the same
+2. **Causal test**: patch layers 29–34 from the control-prompt run into the ban run on the same
    text; if the word comes back, the filter lives there.
-4. **Second metric**: a linear probe for "the word comes next" at substitute positions, or a
+3. **Second metric**: a linear probe for "the word comes next" at substitute positions, or a
    tuned lens.
-5. A newer dense model (e.g. Qwen3.6/3.8-27B, if nnterp supports it); hand labels for the
+4. A newer dense model (e.g. Qwen3.6/3.8-27B, if nnterp supports it); hand labels for the
    meta-sentence detector.
 
 ## Status
@@ -289,8 +345,7 @@ whether they hold for a different kind of word.
 | GPU pod setup (`infra/setup_pod.sh`) | ✅ A100 80GB, driver 570 (CUDA 12.8); CUDA kernel check in both envs |
 | `make sanity` on GPU / Qwen3-8B | ✅ all 7 checks pass (HF parity max diff 0.0) |
 | Experiment 1 (`total`, GSM8K): text, lens, prompt swap | ✅ |
-| Experiment 2 (`factor`, MATH): text | ✅ |
-| Experiment 2: prompt swap | ⏳ running |
+| Experiment 2 (`factor`, MATH): text, prompt swap | ✅ |
 | Meta-sentence detector validated vs hand labels | ❌ todo (`meta_sentences` are saved for this) |
 
 ## Reproduce
