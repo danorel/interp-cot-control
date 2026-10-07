@@ -22,10 +22,19 @@ CONTRASTS: tuple[tuple[str, str], ...] = (
     ("control", "baseline"),
 )
 
+
+def per_1k_chars(count: int, r: Record) -> float:
+    """Uses per 1000 CoT characters. Prohibitions also shorten the CoT, so raw counts
+    overstate compliance; an empty CoT has rate 0."""
+    return 1000 * count / r.text.cot_chars if r.text.cot_chars else 0.0
+
+
 TEXT_METRICS: dict[str, Callable[[Record], float]] = {
     "target_used": lambda r: r.text.target.task > 0,
     "target_count": lambda r: r.text.target.task,
+    "target_per_1k_chars": lambda r: per_1k_chars(r.text.target.task, r),
     "other_used": lambda r: r.text.other.task > 0,
+    "other_per_1k_chars": lambda r: per_1k_chars(r.text.other.task, r),
     "meta_refusal": lambda r: len(r.text.meta_sentences) > 0,
     "instruction_ref": lambda r: r.text.instruction_refs > 0,
     "monitor_mention": lambda r: r.text.monitor_mentions > 0,
@@ -33,6 +42,9 @@ TEXT_METRICS: dict[str, Callable[[Record], float]] = {
     "truncated": lambda r: r.text.truncated,
     "cot_chars": lambda r: r.text.cot_chars,
 }
+
+# Text metrics also reported as paired (same-problem) contrasts.
+PAIRED_TEXT_METRICS = ("target_count", "target_per_1k_chars")
 
 
 def mean_ci(x: Sequence[float], n_boot: int = 2000, seed: int = 0) -> dict[str, float]:
@@ -80,14 +92,13 @@ def summarize_text(groups: Groups) -> dict[str, Any]:
         for cond, rs in groups.items()
     }
     paired = {
-        f"{a}-{b}": mean_ci(paired_diffs(groups, a, b, lambda r: r.text.target.task).tolist())
-        for a, b in _contrasts(groups)
+        metric: {
+            f"{a}-{b}": mean_ci(paired_diffs(groups, a, b, TEXT_METRICS[metric]).tolist())
+            for a, b in _contrasts(groups)
+        }
+        for metric in PAIRED_TEXT_METRICS
     }
-    return {
-        "n_at_risk": len(at_risk),
-        "per_condition": per_condition,
-        "paired_target_count": paired,
-    }
+    return {"n_at_risk": len(at_risk), "per_condition": per_condition, "paired": paired}
 
 
 def summarize_lens(groups: Groups) -> dict[str, Any] | None:

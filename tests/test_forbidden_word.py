@@ -156,6 +156,27 @@ def test_summarize_reports_at_risk_and_lens_contrasts():
     assert [c["mean"] for c in s["lens"]["paired_target_logprob"]["forbid-control"]] == [-0.5, -2.0]
 
 
+def test_per_1k_rate_separates_shorter_cot_from_compliance():
+    def rec(cond: str, cot: str) -> Record:
+        return Record(
+            Sample(Problem("a", "q", None, False), cond, "", ""),
+            score_text(f"<think>{cot}</think>", None, TOTAL, SUM),
+        )
+
+    # forbid: half the uses but also half the length -> same rate, i.e. no real compliance.
+    # (No whitespace in the unit: split_cot strips, which would skew the length ratio.)
+    s = summarize([rec("control", "total-x;" * 4), rec("forbid", "total-x;" * 2)])
+    paired = s["text"]["paired"]
+    assert paired["target_count"]["forbid-control"]["mean"] == -2
+    assert paired["target_per_1k_chars"]["forbid-control"]["mean"] == pytest.approx(0.0)
+    assert (
+        summarize([rec("forbid", "")])["text"]["per_condition"]["forbid"]["target_per_1k_chars"][
+            "mean"
+        ]
+        == 0.0
+    )
+
+
 def test_mean_ci():
     r = mean_ci([1.0] * 10)
     assert r["mean"] == r["lo"] == r["hi"] == 1.0
