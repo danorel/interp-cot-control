@@ -69,6 +69,8 @@ Paired per-problem differences in `total` per 1k chars (95% bootstrap CI):
 `forbid − control` −1.33 [−1.55, −1.12]; `grader − control` −1.46 [−1.69, −1.22];
 `random − control` +0.08 [−0.11, +0.27]; `grader − forbid` −0.12 [−0.26, +0.01].
 
+<img src="reports/figures/text_rate.png" alt="total per 1k CoT characters by condition" width="620">
+
 - **Specific, partial compliance.** Forbidding `total` halves its rate; forbidding `sum` leaves
   `total` unchanged. Fully clean CoTs are rare (5–7%), in line with low CoT controllability
   reported by [CoT-Control](https://arxiv.org/abs/2603.05706).
@@ -105,11 +107,16 @@ Each condition is measured on the CoT it wrote, so text differences are mixed in
 
 `experiments/forbidden_word/swap.py`: each CoT (480 = 120 problems × control/forbid/random/grader)
 is re-read teacher-forced under every condition's prompt, at the same CoT tokens, so a
-difference between prompts is the instruction's effect alone. Run
-`outputs/forbidden_word_swap/20261007-130027`, 0 CoTs skipped. Values below: CoTs written
-under `forbid`; CoTs from the other conditions give the same picture at layers 0–34.
+difference between prompts is the instruction's effect alone. Runs
+`outputs/forbidden_word_swap/20261007-130027` (first) and `…/20261007-151030` (final, with
+position classes below; same picture, figures from it), 0 CoTs skipped. Values below: CoTs
+written under `forbid`; CoTs from the other conditions give the same picture at layers 0–34.
 Same-text pairing removes almost all noise, so nearly every cell has a CI excluding 0 —
 read magnitudes (±0.05 ≈ ±5% is practically zero).
+
+![Same-text contrasts by layer](reports/figures/swap_contrasts.png)
+
+![Different texts vs same text](reports/figures/text_artifact.png)
 
 | layers | forbid − control | **forbid − random** | random − control | grader − forbid |
 |---|---|---|---|---|
@@ -128,6 +135,8 @@ read magnitudes (±0.05 ≈ ±5% is practically zero).
   the word freely.
 - **Stable through the CoT.** Split by relative position (5 bins) the late suppression is
   present from the first to the last fifth of the reasoning, slightly strongest mid-CoT.
+
+  <img src="reports/figures/position_heatmap.png" alt="forbid − random by layer and CoT position" width="520">
 - **Mirror substitution inside.** Forbidding `sum` *raises* P(`total`) at late layers
   (+0.1 … +0.4), the internal counterpart of `sum` rising in text when `total` is forbidden.
 - **Monitoring adds ≤7%** (`grader − forbid`).
@@ -135,20 +144,73 @@ read magnitudes (±0.05 ≈ ±5% is practically zero).
   CoTs) — log P of a rare token at the final layer is dominated by the distribution's tail; not
   interpreted.
 
-**Current reading:** the word does not disappear from the computation. Through the first ~2/3 of
-the network the model prepares `total` exactly as without the prohibition; the instruction acts
-as a late, word-specific filter (layers ~24–34), which removes about half of the word's uses
-in the text. Still correlational, and the lens tracks "next token is `total`", not the concept.
+### Position classes: violations, substitutes, meta sentences
+
+The swap run also splits CoT positions by the token that comes next:
+
+| class | next token | in `forbid` CoTs | in `control` CoTs |
+|---|---|---|---|
+| neutral | anything else (the measurement above) | 128 per CoT | 128 per CoT |
+| target | `total`, outside meta sentences | 822 genuine violations (112 CoTs) | 1,819 natural uses |
+| substitute | `sum` / `overall` / `combined` / `altogether` / `aggregate` | 136 (56 CoTs) | 113 (41 CoTs) |
+| meta | a token inside a meta sentence | 1,723 (47 CoTs) | 64 (1 CoT) |
+
+A **meta sentence** is a CoT sentence that talks *about* the word instead of using it ("the
+problem says not to use the word "total", so I'll say "combined""), detected with the same
+rule as the text metrics and mapped onto tokens by character offsets. Separating them matters:
+13% of `total` positions in `forbid` CoTs (18% in `grader`) were quotes of the rule, not uses.
+
+**Violations: the filter does not scale up where the model writes the word.** On the same
+text, the prohibition suppresses `total` hardest where the model would naturally write it
+(×0.16–0.26 at layers 29–32 and at the output). At genuine violations it acts only at the
+background level of ordinary positions (×0.55 at layers 29–30) and fades to nothing at the
+output (×0.97). The mid-layer drive toward `total` at violations is somewhat stronger than at
+natural uses (≈2× at layer 18). So violations look like a slightly stronger drive meeting a
+filter that does not intensify. Caveat: violations are selected by outcome (the model did write
+the word there), which biases the output-layer contrast toward zero; layers 29–32 are less
+affected.
+
+![Violations vs natural uses](reports/figures/violations.png)
+
+**Substitutes: `total` is a strong hidden runner-up.** Before a substitute written under the
+prohibition, P(`total`) at layers 24–27 is 14–90× higher than before the same words used
+naturally in `control` CoTs, then late layers crush it. The substitute already leads from the
+mid layers, so this is "`total` stayed a strong competitor and was filtered out", not "the
+model meant `total` until the last moment".
+
+![Substitutes](reports/figures/substitutes.png)
+
+**Meta sentences: reasoning about the rule raises the word mid-network.** The only place where
+the prohibition changes the middle of the network: inside meta sentences P(`total`) at layers
+17–22 is up to ~2.2× higher under `forbid` than under `control` on the same text ("don't think of
+a white bear"), and late layers then suppress it far harder than elsewhere. Same in `grader`.
+
+![Meta sentences](reports/figures/meta.png)
+
+**Current reading:** the word does not disappear from the computation. In ordinary reasoning the
+first ~2/3 of the network prepares `total` exactly as without the prohibition, and the
+instruction acts as a late, word-specific filter (layers ~24–34) that targets the places
+where `total` is most likely. When it works, the model writes a substitute while `total`
+remains a strong hidden candidate; where it does not intensify, the model violates the rule.
+When the model reasons about the rule itself, the forbidden word is boosted mid-network and
+suppressed hardest. Still correlational, and the lens tracks "next token is `total`", not the
+concept.
 
 ### Next steps
 
 1. ~~Remove the position/text confound~~ — done (prompt swap above).
-2. **Causal test** — patch layers 29–34 from the control-prompt run into the forbid-prompt run
+2. ~~Split violations / substitutes / meta sentences~~ — done (position classes above).
+3. **Outcome-independent violation test** — on `control` CoTs (natural uses), predict from the
+   layer-24–28 state where the prohibition would still leave `total` likely at the output.
+4. **Causal test** — patch layers 29–34 from the control-prompt run into the forbid-prompt run
    on the same CoT text; if P(`total`) recovers, the suppression is mediated there.
-3. **Second metric** — linear probe for "`total` comes next" applied where the model wrote a
-   substitute (`sum`, `overall`, …), and/or a tuned lens.
-4. Replicate on a newer dense model (Qwen3.6/3.8-27B) and another word/dataset; validate the
+5. **Second metric** — linear probe for "`total` comes next" at substitute positions, and/or a
+   tuned lens.
+6. Replicate on a larger / newer dense model and another word/dataset; validate the
    meta-sentence regex on hand labels.
+
+Figures: `uv run python -m experiments.forbidden_word.report --main <lens run> --swap <swap run>`
+(writes `reports/figures/`).
 
 ## Quickstart
 
@@ -217,7 +279,10 @@ experiments/forbidden_word/
   stats.py        bootstrap CIs, paired contrasts, metric table
   show.py         inspect one problem across all conditions
   summarize.py    recompute summary.json from rows.jsonl (no model)
-  swap.py, swap.yaml  prompt swap: same CoT under every condition's prompt (same-text lens)
+  swap.py, swap.yaml  prompt swap: same CoT under every condition's prompt (same-text lens),
+                  positions split into neutral / target / substitute / meta
+  report.py       README figures from finished runs (matplotlib, dev dependency)
+reports/figures/  the figures embedded in this README
 experiments/sanity/  checks to run on every new model/pod before experiments (`make sanity`)
 src/interptemp/   generic infrastructure: model backends (nnterp, vLLM), Site, run dirs,
                   typed configs with CLI overrides, JSONL/activation storage
@@ -235,6 +300,9 @@ tests/            unit tests; `make test-model` runs integration tests on Qwen3-
   `random` tests specificity rather than "a prohibition of equal difficulty".
 - **Logit lens uses the model's own final norm + unembedding** (no tuned lens); early-layer
   values are not directly interpretable — compare conditions per layer, not across layers.
+- **The `total` token set includes `Tot` / ` Tot`** (first token of "Totals"), a generic prefix.
+  Its probability mass is negligible next to ` total`, so results are unaffected; it is kept for
+  comparability across runs. Substitute token sets use single-token variants only.
 - **Truncated CoTs** (no `</think>` within `max_new_tokens`) are flagged, not dropped.
 - On this Mac, MPS segfaults with nnterp, so local runs use CPU in float32 (≈9× faster than
   bf16 on CPU).
